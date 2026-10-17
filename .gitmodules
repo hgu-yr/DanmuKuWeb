@@ -1,0 +1,6 @@
+[submodule "DanmuKuWeb-Server"]
+	path = DanmuKuWeb-Server
+	url = git@github.com:hgu-yr/DanmuKuWeb-Server.git
+[submodule "DanmuKuWeb-Web"]
+	path = DanmuKuWeb-Web
+	url = git@github.com:hgu-yr/DanmuKuWeb-Web.git
