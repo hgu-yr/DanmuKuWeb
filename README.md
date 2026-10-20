@@ -61,6 +61,20 @@ npm run dev
 
 打开 http://localhost:5173 即可发弹幕（Vite 已把 `/api` 与 `/ws` 代理到后端）。
 
+### 主站背景
+
+主站背景是一张斜俯视的 **3D 中国地图**，由脚本生成，不依赖地图库，也不请求在线瓦片：
+
+```bash
+cd DanmuKuWeb-Web
+npm run map            # 重新生成 public/geo/china-map-3d.svg
+npm run map -- --refresh   # 重新下载省份边界数据
+```
+
+省份边界取自阿里云 DataV 的全国 GeoJSON（首次运行会缓存到 `scripts/.cache/`），
+脚本负责墨卡托投影、抽稀、叠出厚度、加城市光点和南海诸岛小图，产物是 150 KB 左右的矢量图，
+放到多大都不会糊。
+
 > 后端只读环境变量，**不会自动加载 `.env` 文件**。想用配置文件的话：
 > ```bash
 > cp DanmuKuWeb-Server/.env.example DanmuKuWeb-Server/.env
