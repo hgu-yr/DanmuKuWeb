@@ -94,6 +94,27 @@ npm run dev
 - 引擎放行的内容会进入样本池，分析器自动挖掘漏网写法与形近缩写，产出候选后一键采纳即生效
 - 所有变更都有日志可回溯，`wx:123123` 这类写法无需人工逐条添加
 
+默认词表分九类（政治敏感、色情低俗、赌博博彩、毒品、诈骗、违禁品交易、涉未成年人、广告引流、辱骂攻击），
+合计 400 个词。词表只增不减，升级内置词库不会覆盖后台改过的规则：
+
+```bash
+cd DanmuKuWeb-Server
+DB_PATH=data/danmuku.db go run ./cmd/seedrules   # 合并内置默认词表
+```
+
+政治类只收「法律明确禁止的行为与主张」的类别表述，不放具体人名与事件（易过时、误伤代价高）。
+需要更全覆盖时，把权威词库导进去即可，引擎的拼音派生与复盘学习对导入的词同样生效：
+
+```bash
+# 纯词表：每行一个词，也支持逗号/顿号分隔，# 开头是注释
+DB_PATH=data/danmuku.db go run ./cmd/importwords -rule politics -file politics.txt
+
+# JSON：与后台规则接口同构，可一次导入多条规则
+DB_PATH=data/danmuku.db go run ./cmd/importwords -file ruleset.json
+```
+
+导入是幂等的，只补缺失的词，不会删除或覆盖已有词；导完重启服务生效。
+
 首次启动时若数据库里还没有账号，会自动创建初始管理员：
 
 - 设置了 `ADMIN_PASSWORD` → 使用它作为初始密码
