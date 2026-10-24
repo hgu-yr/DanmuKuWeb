@@ -53,4 +53,4 @@ make web      # 只起前端 :5173
 ```
 
 - 弹幕墙：http://localhost:5173/
-- 管理后台：http://localhost:5173/dx7k2m9q/ —— 主站不提供入口，只能直接访问（路径见 `DanmuKuWeb-Web/src/config/paths.ts`）
+- 管理后台：http://localhost:5173/manage/yr/ —— 主站不提供入口，只能直接访问（路径见 `DanmuKuWeb-Web/src/config/paths.ts`）
