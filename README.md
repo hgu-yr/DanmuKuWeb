@@ -68,6 +68,60 @@ npm run dev
 > make server
 > ```
 
+## Docker 部署
+
+```bash
+cp .env.example .env
+# 必改：ADMIN_PASSWORD、ALLOWED_ORIGINS（生产填真实域名）
+docker compose up -d --build
+```
+
+- `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
+- `server` 不对外暴露 8080，SQLite 数据放在 `danmuku-data` 命名卷
+- 更新：`git pull && git submodule update --init --recursive && docker compose up -d --build`
+- 备份数据卷：
+  ```bash
+  docker run --rm -v danmuku_danmuku-data:/data -v "$PWD":/backup alpine \
+    tar czf /backup/danmuku-data.tar.gz -C /data .
+  ```
+- 需要地区统计时，把 `ip2region.xdb` 放到 `./data/`，并取消 compose 里的只读挂载注释
+- 生产建议在 web 前再加一层 HTTPS 反向代理（Caddy / Traefik / Nginx），并确保
+  `ALLOWED_ORIGINS` 与实际域名一致
+
+## CI 与代码质检
+
+`.github/workflows/ci.yml` 包含：
+
+1. **代码质检**：Go `build` / `vet` / `test`、`staticcheck`、`govulncheck`；
+   前端 `npm ci`、`vue-tsc`、`vite build`、`npm audit`
+2. **Docker 构建**：构建 server / web 镜像，并校验 `docker compose config`
+3. **PR 评论**：质检和 Docker 结果自动汇总到 PR 评论（同一条评论更新，不刷屏）
+4. **镜像发布**：`main` 分支通过后推送 `ghcr.io/<owner>/danmuku-server` 与
+   `ghcr.io/<owner>/danmuku-web`
+
+前置条件：
+
+- 仓库 secret `SUBMODULE_SSH_KEY`：一把能读取两个子仓库的 SSH 私钥
+- 仓库 Settings → Actions → Workflow permissions 允许写 packages
+
+本地复现质检：
+
+```bash
+./scripts/ci-quality.sh
+cat quality-report.md
+```
+
+部署服务器可以直接拉 CI 镜像：
+
+```bash
+export SERVER_IMAGE=ghcr.io/hgu-yr/danmuku-server:latest
+export WEB_IMAGE=ghcr.io/hgu-yr/danmuku-web:latest
+docker compose pull
+docker compose up -d --no-build
+```
+
+> 仍需要在 `.env` 中设置强密码与真实域名；`docker compose` 会读取它。
+
 ## 后台管理
 
 访问 http://localhost:5173/manage/yr/ 进入后台（过滤规则与命中趋势（7/14/30 天图表） + 词频统计 + 地区统计 + 引擎复盘），未登录会先跳到登录页。

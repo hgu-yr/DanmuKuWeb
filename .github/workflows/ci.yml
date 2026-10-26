@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 子模块是独立私有仓库，需要仓库 secret SUBMODULE_SSH_KEY：
+# 一把能读取 DanmuKuWeb-Server / DanmuKuWeb-Web 的 SSH 私钥。
+permissions:
+  contents: read
+
+env:
+  GO_VERSION_FILE: DanmuKuWeb-Server/go.mod
+  NODE_VERSION: "22"
+
+jobs:
+  quality:
+    name: 代码质检
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout（含子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: DanmuKuWeb-Server/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: DanmuKuWeb-Web/package-lock.json
+
+      - name: Install Go quality tools
+        continue-on-error: true
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run quality checks
+        run: ./scripts/ci-quality.sh
+
+      - name: Upload quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-report
+          path: quality-report.md
+          if-no-files-found: warn
+
+  docker:
+    name: Docker 构建
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout（含子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
+
+      - name: Build images and validate compose
+        run: |
+          set +e
+          fail=0
+          echo "# Docker 构建" > docker-report.md
+          echo "" >> docker-report.md
+
+          if docker build -t danmuku-server:ci ./DanmuKuWeb-Server > build-server.log 2>&1; then
+            echo "- ✅ **server 镜像" >> docker-report.md
+          else
+            echo "- ❌ **server 镜像" >> docker-report.md
+            echo '```' >> docker-report.md
+            tail -n 40 build-server.log >> docker-report.md
+            echo '```' >> docker-report.md
+            fail=1
+          fi
+
+          if docker build -t danmuku-web:ci ./DanmuKuWeb-Web > build-web.log 2>&1; then
+            echo "- ✅ **web 镜像" >> docker-report.md
+          else
+            echo "- ❌ **web 镜像" >> docker-report.md
+            echo '```' >> docker-report.md
+            tail -n 40 build-web.log >> docker-report.md
+            echo '```' >> docker-report.md
+            fail=1
+          fi
+
+          if docker compose --env-file .env.example config > /dev/null; then
+            echo "- ✅ **docker compose 配置" >> docker-report.md
+          else
+            echo "- ❌ **docker compose 配置" >> docker-report.md
+            fail=1
+          fi
+
+          exit $fail
+
+      - name: Upload docker report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-report
+          path: docker-report.md
+          if-no-files-found: warn
+
+  comment:
+    name: 质检结果评论
+    needs: [quality, docker]
+    if: |
+      always() &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Download reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: quality-report
+          path: artifacts/quality
+
+      - name: Download docker report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-report
+          path: artifacts/docker
+
+      - name: Create or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const marker = '<!-- danmuku-ci-quality -->'
+            const files = [
+              'artifacts/quality/quality-report.md',
+              'artifacts/docker/docker-report.md',
+            ]
+            const parts = [marker, '## CI 代码质检', '']
+            for (const file of files) {
+              if (fs.existsSync(file)) parts.push(fs.readFileSync(file, 'utf8'))
+            }
+            parts.push('')
+            parts.push(`[查看本次运行](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`)
+
+            let body = parts.join('\n')
+            if (body.length > 60000) body = body.slice(0, 60000) + '\n\n…（报告过长已截断）'
+
+            const { owner, repo } = context.repo
+            const issue_number = context.issue.number
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            })
+            const existing = comments.find((c) => c.body && c.body.includes(marker))
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body })
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body })
+            }
+
+  publish:
+    name: 构建并推送镜像
+    needs: [quality, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout（含子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SUBMODULE_SSH_KEY }}
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server
+        uses: docker/build-push-action@v6
+        with:
+          context: ./DanmuKuWeb-Server
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/danmuku-server:latest
+            ghcr.io/${{ github.repository_owner }}/danmuku-server:${{ github.sha }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./DanmuKuWeb-Web
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/danmuku-web:latest
+            ghcr.io/${{ github.repository_owner }}/danmuku-web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
