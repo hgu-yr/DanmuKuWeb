@@ -9,6 +9,7 @@ dist/
 node_modules/
 
 .DS_Store
+.idea/
 
 # CI 报告
 quality-report.md
