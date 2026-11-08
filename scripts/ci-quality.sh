@@ -70,6 +70,8 @@ fi
 echo "" >> "$REPORT"
 echo "## 前端" >> "$REPORT"
 run_check "npm ci" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm ci --no-audit --no-fund"
+run_check "eslint" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run lint"
+run_check "prettier" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run format:check"
 run_check "vue-tsc" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run type-check"
 run_check "vite build" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run build"
 run_check "vitest" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm test"
