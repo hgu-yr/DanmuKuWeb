@@ -5,6 +5,9 @@
 #   而本项目 go.mod 要求 go 1.26.0、前端是 Node 22。
 #   这里直接用官方镜像，版本和 Dockerfile 保持一致。
 #
+# 镜像走 DaoCloud 的 Docker Hub 镜像站：Gitee Go 构建机直连 Docker Hub
+# 会 Back-off pulling image，换成国内镜像站即可。
+#
 # 前置条件（Gitee Go → 流水线设置 → 参数/环境变量）：
 #   GH_TOKEN = 对 hgu-yr/DanmuKuWeb-Server / DanmuKuWeb-Web 有只读权限的
 #              GitHub PAT（Fine-grained: Contents = Read-only）
@@ -35,9 +38,10 @@ stages:
         name: backend_ci
         displayName: Go 构建 / vet / 测试
         certificate: ''
-        image: golang:1.26-alpine
+        image: docker.m.daocloud.io/library/golang:1.26-alpine
         command:
           - set -eu
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
           - apk add --no-cache git openssh-client
           - |
             if [ ! -f DanmuKuWeb-Server/go.mod ]; then
@@ -65,9 +69,10 @@ stages:
         name: frontend_ci
         displayName: 依赖安装 / 类型检查 / 构建
         certificate: ''
-        image: node:22-alpine
+        image: docker.m.daocloud.io/library/node:22-alpine
         command:
           - set -eu
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
           - apk add --no-cache git openssh-client
           - |
             if [ ! -f DanmuKuWeb-Web/package.json ]; then
