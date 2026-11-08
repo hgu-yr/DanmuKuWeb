@@ -19,8 +19,10 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      CLIENT_TOKEN_SECRET: ${CLIENT_TOKEN_SECRET:-}
       WS_MAX_CLIENTS: ${WS_MAX_CLIENTS:-5000}
+      WS_HANDSHAKE_RATE_LIMIT: ${WS_HANDSHAKE_RATE_LIMIT:-60}
+      # 默认只进候选池；开启前请评估 LLM prompt injection 风险
+      LLM_AUTO_APPLY_ENABLED: ${LLM_AUTO_APPLY_ENABLED:-false}
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-65536}
     volumes:
       - danmuku-data:/app/data

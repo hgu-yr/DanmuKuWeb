@@ -53,7 +53,7 @@ run_check() {
 echo "## 后端" >> "$REPORT"
 run_check "go build" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go build ./..."
 run_check "go vet" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go vet ./..."
-run_check "go test" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go test ./..."
+run_check "go test -race" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go test -race ./..."
 
 if command -v staticcheck >/dev/null 2>&1; then
   run_check "staticcheck" warn bash -c "cd '$ROOT/DanmuKuWeb-Server' && staticcheck ./..."
@@ -62,9 +62,9 @@ else
 fi
 
 if command -v govulncheck >/dev/null 2>&1; then
-  run_check "govulncheck" warn bash -c "cd '$ROOT/DanmuKuWeb-Server' && govulncheck ./..."
+  run_check "govulncheck" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && govulncheck ./..."
 else
-  echo "- ⏭️ **govulncheck**（未安装，跳过）" >> "$REPORT"
+  echo "- ⏭️ **govulncheck**（未安装，CI 会安装；本地跳过）" >> "$REPORT"
 fi
 
 echo "" >> "$REPORT"
@@ -72,7 +72,7 @@ echo "## 前端" >> "$REPORT"
 run_check "npm ci" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm ci --no-audit --no-fund"
 run_check "vue-tsc" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run type-check"
 run_check "vite build" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run build"
-run_check "npm audit (prod)" warn bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm audit --omit=dev"
+run_check "npm audit (prod)" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm audit --omit=dev"
 
 echo "" >> "$REPORT"
 if [ "$FAIL" -eq 0 ]; then
