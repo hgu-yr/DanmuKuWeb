@@ -72,6 +72,9 @@ echo "## 前端" >> "$REPORT"
 run_check "npm ci" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm ci --no-audit --no-fund"
 run_check "vue-tsc" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run type-check"
 run_check "vite build" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run build"
+run_check "vitest" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm test"
+# 禁止使用 v-html：当前所有用户内容都靠 Vue 默认转义，一旦引入 v-html 就是存储型 XSS 入口。
+run_check "no v-html" block bash -c "! find '$ROOT/DanmuKuWeb-Web/src' -name '*.vue' -exec grep -In 'v-html' {} +"
 run_check "npm audit (prod)" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm audit --omit=dev"
 
 echo "" >> "$REPORT"
