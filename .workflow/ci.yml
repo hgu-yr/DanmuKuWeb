@@ -1,0 +1,83 @@
+# Gitee Go 流水线：CI（后端 + 前端）
+#
+# 为什么用 execute@docker 而不是内置的 golang/node 插件：
+#   内置插件版本太旧（Golang 最高 1.16 左右、Node 最高 15），
+#   而本项目 go.mod 要求 go 1.26.0、前端是 Node 22。
+#   这里直接用官方镜像，版本和 Dockerfile 保持一致。
+#
+# 前置条件（Gitee Go → 流水线设置 → 参数/环境变量）：
+#   GH_TOKEN = 对 hgu-yr/DanmuKuWeb-Server / DanmuKuWeb-Web 有只读权限的
+#              GitHub PAT（Fine-grained: Contents = Read-only）
+#   代码在两个 GitHub 私有子模块里，Gitee 构建机需要它才能检出子模块。
+#   如果你已经在“源码管理”里开启子模块并配置了 SSH 部署密钥，可忽略 GH_TOKEN。
+version: "1.0"
+name: ci
+displayName: CI（测试 + 构建）
+
+triggers:
+  trigger: auto
+  push:
+    branches:
+      precise:
+        - main
+  pr:
+    branches:
+      include:
+        - main
+
+stages:
+  - name: backend
+    displayName: 后端
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: execute@docker
+        name: backend_ci
+        displayName: Go 构建 / vet / 测试
+        certificate: ''
+        image: golang:1.26-alpine
+        command:
+          - set -eu
+          - apk add --no-cache git openssh-client
+          - |
+            if [ ! -f DanmuKuWeb-Server/go.mod ]; then
+              echo ">> 子模块未检出，开始初始化"
+              if [ -n "${GH_TOKEN:-}" ]; then
+                git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+              fi
+              git submodule update --init --recursive
+            fi
+          - cd DanmuKuWeb-Server
+          - export GOFLAGS=-mod=mod
+          - export CGO_ENABLED=0
+          - export GOPROXY=https://goproxy.cn,direct
+          - go mod download
+          - go build ./...
+          - go vet ./...
+          - go test -v -coverprofile=cover.out ./...
+
+  - name: frontend
+    displayName: 前端
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: execute@docker
+        name: frontend_ci
+        displayName: 依赖安装 / 类型检查 / 构建
+        certificate: ''
+        image: node:22-alpine
+        command:
+          - set -eu
+          - apk add --no-cache git openssh-client
+          - |
+            if [ ! -f DanmuKuWeb-Web/package.json ]; then
+              echo ">> 子模块未检出，开始初始化"
+              if [ -n "${GH_TOKEN:-}" ]; then
+                git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+              fi
+              git submodule update --init --recursive
+            fi
+          - cd DanmuKuWeb-Web
+          - npm ci --no-audit --no-fund
+          - npm run type-check
+          - npm run build
