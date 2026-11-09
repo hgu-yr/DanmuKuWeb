@@ -15,6 +15,10 @@
 #   子模块源码在 GitHub，但 Gitee 构建机访问 github.com 不稳定，
 #   所以 CI 从 Gitee 镜像拉取（镜像由 scripts/push-to-github.sh 同步）。
 #   未配置 MIRROR_TOKEN 时脚本会直接报错退出。
+#   AI_API_KEY = OpenCode Go（或其它 OpenAI 兼容服务）的 API Key，
+#                用于 AI 代码审查；未配置时跳过审查，不阻塞构建。
+#   ISSUE_TOKEN = 有 issues 权限的 Gitee 私人令牌，用于创建审查 Issue。
+#   AI_BASE_URL / AI_MODEL 可选，默认 OpenCode Go + deepseek-v4.1-flash。
 version: "1.0"
 name: ci
 displayName: CI（测试 + 构建）
@@ -31,6 +35,24 @@ triggers:
         - main
 
 stages:
+  # 放在最前面：即使后端/前端构建失败，也保证每次推送都有 AI 审查记录。
+  # 审查失败不阻塞构建（脚本内部吞掉错误，始终 exit 0）。
+  - name: ai_review
+    displayName: AI 代码审查
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: execute@docker
+        name: ai_review
+        displayName: 审查提交并创建 Issue
+        certificate: ''
+        image: docker.m.daocloud.io/library/alpine:3.24
+        command:
+          - set -eu
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
+          - apk add --no-cache bash git curl jq
+          - bash scripts/ai-review.sh
+
   - name: backend
     displayName: 后端
     strategy: naturally
@@ -97,7 +119,12 @@ stages:
           - npm run type-check
           - npm run build
 
-# 关联 Gitee Go「通用变量」里的 MIRROR_TOKEN，构建时注入为同名环境变量。
+# 关联 Gitee Go「通用变量」，构建时注入为同名环境变量。
 # 变量值保存在「流水线 → 通用变量」中，不写进仓库。
+#   MIRROR_TOKEN  检出 Gitee 子模块镜像
+#   AI_API_KEY    DeepSeek / OpenAI 兼容接口的 Key
+#   ISSUE_TOKEN   有 issues 权限的 Gitee 私人令牌（创建审查 Issue）
 ref_variable:
   - MIRROR_TOKEN
+  - AI_API_KEY
+  - ISSUE_TOKEN
