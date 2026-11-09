@@ -133,11 +133,13 @@ fi
 
 push_branch_and_main "${ROOT_DIR}" "${ROOT_REPO}"
 
-echo "==> 4/4 Gitee 根仓库镜像"
+echo "==> 4/4 推送根仓库到 Gitee（流水线从 Gitee main 读取）"
 if [[ -n "${GITEE_TOKEN}" ]]; then
-  echo "    子模块镜像已同步；根仓库如未自动同步，请到 Gitee 仓库页点「强制同步」"
+  gitee_root_url="https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${ROOT_REPO}.git"
+  git push --force "$gitee_root_url" "HEAD:main"
+  echo "    已同步 Gitee main"
 else
-  echo "    未配置 GITEE_TOKEN，跳过了子模块镜像同步" >&2
+  echo "    未配置 GITEE_TOKEN，跳过；请到 Gitee 仓库页点「强制同步」" >&2
 fi
 
 echo
