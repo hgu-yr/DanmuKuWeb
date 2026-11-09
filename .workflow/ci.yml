@@ -95,3 +95,8 @@ stages:
           - npm ci --no-audit --no-fund
           - npm run type-check
           - npm run build
+
+# 关联 Gitee Go「通用变量」里的 GH_TOKEN，构建时注入为同名环境变量。
+# 变量值保存在「流水线 → 通用变量」中，不写进仓库。
+ref_variable:
+  - GH_TOKEN
