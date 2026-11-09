@@ -125,7 +125,7 @@ PAYLOAD="$(jq -n \
   --arg model "$AI_MODEL" \
   --arg system "$SYSTEM_PROMPT" \
   --arg user "$USER_PROMPT" \
-  '{model: $model, temperature: 0.2, max_tokens: 8000,
+  '{model: $model, temperature: 0.2, max_tokens: 8000, reasoning_effort: "none",
     messages: [{role: "system", content: $system}, {role: "user", content: $user}]}')"
 
 RESP=""
