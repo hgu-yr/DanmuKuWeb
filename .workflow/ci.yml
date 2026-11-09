@@ -8,12 +8,13 @@
 # 镜像走 DaoCloud 的 Docker Hub 镜像站：Gitee Go 构建机直连 Docker Hub
 # 会 Back-off pulling image，换成国内镜像站即可。
 #
-# 前置条件（Gitee Go → 流水线设置 → 参数/环境变量）：
-#   GH_TOKEN = 对 hgu-yr/DanmuKuWeb-Server / DanmuKuWeb-Web 有只读权限的
-#              GitHub PAT（Fine-grained: Contents = Read-only）
-#   代码在两个 GitHub 私有子模块里，Gitee 构建机需要它才能检出子模块。
-#   如果你已经在“源码管理”里开启子模块并配置了 SSH 部署密钥，可忽略 GH_TOKEN。
-#   两者都没有时，脚本会直接报错退出，避免出现难懂的 SSH host key 报错。
+# 前置条件（Gitee Go → 流水线 → 通用变量）：
+#   GITEE_TOKEN = Gitee 私人令牌（projects 权限），用于克隆两个私有子模块镜像：
+#     gitee.com/yr007/danmu-ku-web-server
+#     gitee.com/yr007/danmu-ku-web-web
+#   子模块源码在 GitHub，但 Gitee 构建机访问 github.com 不稳定，
+#   所以 CI 从 Gitee 镜像拉取（镜像由 scripts/push-to-github.sh 同步）。
+#   未配置 GITEE_TOKEN 时脚本会直接报错退出。
 version: "1.0"
 name: ci
 displayName: CI（测试 + 构建）
@@ -47,14 +48,14 @@ stages:
           - |
             if [ ! -f DanmuKuWeb-Server/go.mod ]; then
               echo ">> 子模块未检出，开始初始化"
-              if [ -z "${GH_TOKEN:-}" ]; then
-                echo "ERROR: 未配置 GH_TOKEN，无法拉取 GitHub 私有子模块。" >&2
-                echo "请在 Gitee Go → 流水线设置 → 参数/环境变量中添加 GH_TOKEN（GitHub PAT，Contents: Read-only）。" >&2
-                echo "或在源码管理中开启子模块并配置 SSH 部署密钥。" >&2
+              if [ -z "${GITEE_TOKEN:-}" ]; then
+                echo "ERROR: 未配置 GITEE_TOKEN，无法拉取 Gitee 私有子模块镜像。" >&2
+                echo "请在 Gitee Go → 流水线 → 通用变量中添加 GITEE_TOKEN（projects 权限的 Gitee 私人令牌）。" >&2
                 exit 1
               fi
-              git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-              GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git submodule update --init --recursive
+              git config --global url."https://yr007:${GITEE_TOKEN}@gitee.com/yr007/danmu-ku-web-server.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Server.git"
+              git config --global url."https://yr007:${GITEE_TOKEN}@gitee.com/yr007/danmu-ku-web-web.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              git submodule update --init --recursive
             fi
           - cd DanmuKuWeb-Server
           - export GOFLAGS=-mod=mod
@@ -82,21 +83,21 @@ stages:
           - |
             if [ ! -f DanmuKuWeb-Web/package.json ]; then
               echo ">> 子模块未检出，开始初始化"
-              if [ -z "${GH_TOKEN:-}" ]; then
-                echo "ERROR: 未配置 GH_TOKEN，无法拉取 GitHub 私有子模块。" >&2
-                echo "请在 Gitee Go → 流水线设置 → 参数/环境变量中添加 GH_TOKEN（GitHub PAT，Contents: Read-only）。" >&2
-                echo "或在源码管理中开启子模块并配置 SSH 部署密钥。" >&2
+              if [ -z "${GITEE_TOKEN:-}" ]; then
+                echo "ERROR: 未配置 GITEE_TOKEN，无法拉取 Gitee 私有子模块镜像。" >&2
+                echo "请在 Gitee Go → 流水线 → 通用变量中添加 GITEE_TOKEN（projects 权限的 Gitee 私人令牌）。" >&2
                 exit 1
               fi
-              git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-              GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new" git submodule update --init --recursive
+              git config --global url."https://yr007:${GITEE_TOKEN}@gitee.com/yr007/danmu-ku-web-server.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Server.git"
+              git config --global url."https://yr007:${GITEE_TOKEN}@gitee.com/yr007/danmu-ku-web-web.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              git submodule update --init --recursive
             fi
           - cd DanmuKuWeb-Web
           - npm ci --no-audit --no-fund
           - npm run type-check
           - npm run build
 
-# 关联 Gitee Go「通用变量」里的 GH_TOKEN，构建时注入为同名环境变量。
+# 关联 Gitee Go「通用变量」里的 GITEE_TOKEN，构建时注入为同名环境变量。
 # 变量值保存在「流水线 → 通用变量」中，不写进仓库。
 ref_variable:
-  - GH_TOKEN
+  - GITEE_TOKEN

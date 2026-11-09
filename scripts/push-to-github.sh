@@ -21,6 +21,36 @@ OWNER="hgu-yr"
 ROOT_REPO="DanmuKuWeb"
 SUBMODULES=(DanmuKuWeb-Server DanmuKuWeb-Web)
 
+# 子模块的 Gitee 镜像（路径是小写）。Gitee Go 构建机访问 github.com 不稳定，
+# CI 从这些镜像拉取子模块，所以每次推送后要同步过去。
+GITEE_OWNER="yr007"
+GITEE_TOKEN="${GITEE_TOKEN:-$(cat "${HOME}/.config/danmuku/gitee_token" 2>/dev/null || true)}"
+
+gitee_mirror_for() {
+  case "$1" in
+    DanmuKuWeb-Server) printf '%s' "danmu-ku-web-server" ;;
+    DanmuKuWeb-Web)    printf '%s' "danmu-ku-web-web" ;;
+    *)                 printf '%s' "" ;;
+  esac
+}
+
+sync_to_gitee() {
+  local dir="$1"
+  local repo
+  repo="$(gitee_mirror_for "$dir")"
+  if [[ -z "$repo" ]]; then
+    return 0
+  fi
+  if [[ -z "${GITEE_TOKEN}" ]]; then
+    echo "    ${dir}: 未配置 GITEE_TOKEN，跳过 Gitee 镜像同步" >&2
+    return 0
+  fi
+  local url="https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${repo}.git"
+  echo "    ${dir}: push -> gitee.com/${GITEE_OWNER}/${repo}"
+  git -C "$dir" push --force --all "$url"
+  git -C "$dir" push --force --tags "$url"
+}
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
@@ -74,12 +104,13 @@ for dir in "${SUBMODULES[@]}"; do
   fi
 done
 
-echo "==> 2/3 推送子模块（当前分支 -> 同名远端分支 -> main）"
+echo "==> 2/4 推送子模块（当前分支 -> 同名远端分支 -> main）"
 for dir in "${SUBMODULES[@]}"; do
   push_branch_and_main "${dir}" "${dir}"
+  sync_to_gitee "${dir}"
 done
 
-echo "==> 3/3 提交并推送根仓库（当前分支 -> 同名远端分支 -> main）"
+echo "==> 3/4 提交并推送根仓库（当前分支 -> 同名远端分支 -> main）"
 git add -A
 if git diff --cached --quiet; then
   echo "    根仓库没有需要提交的改动"
@@ -97,5 +128,13 @@ if ! git remote get-url origin >/dev/null 2>&1; then
 fi
 
 push_branch_and_main "${ROOT_DIR}" "${ROOT_REPO}"
+
+echo "==> 4/4 Gitee 根仓库镜像"
+if [[ -n "${GITEE_TOKEN}" ]]; then
+  echo "    子模块镜像已同步；根仓库如未自动同步，请到 Gitee 仓库页点「强制同步」"
+else
+  echo "    未配置 GITEE_TOKEN，跳过了子模块镜像同步" >&2
+fi
+
 echo
 echo "✅ 完成：$(current_branch "${ROOT_DIR}") 已推送，origin/main 已同步。"
