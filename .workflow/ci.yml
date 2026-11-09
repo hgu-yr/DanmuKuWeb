@@ -25,10 +25,12 @@ displayName: CI（测试 + 构建）
 
 triggers:
   trigger: auto
+  # 所有分支推送都触发（空列表表示不做分支过滤）
   push:
     branches:
-      precise:
-        - main
+      prefix: []
+      precise: []
+      include: []
   pr:
     branches:
       include:
