@@ -42,6 +42,7 @@ if [[ -n "$PR_NUMBER" && -n "${GITEE_SOURCE_COMMIT:-}" ]]; then
 fi
 TARGET_SHA="${GITEE_COMMIT:-}"
 SOURCE_SHA="${GITEE_SOURCE_COMMIT:-}"
+PUSH_BEFORE=""
 PR_BODY=""
 
 log() { printf '[ai-review] %s\n' "$*"; }
@@ -86,9 +87,17 @@ repo_diff() {
   printf '%s' "$out"
 }
 
-# 根仓库是否改了 CI / 脚本 / 文档；只有子模块指针变化时没必要单独建 Issue
+# 根仓库是否改了 CI / 脚本 / 文档；只有子模块指针变化时没必要单独建 Issue。
+# 有 push before SHA 时按整个推送范围判断，避免多提交推送漏审。
 root_has_code_changes() {
-  git show --name-only --format= HEAD 2>/dev/null \
+  local files
+  if [[ -n "${PUSH_BEFORE:-}" ]]; then
+    files="$(git diff --name-only "$PUSH_BEFORE" "$GITEE_COMMIT" 2>&1 || true)"
+  else
+    files="$(git show --name-only --format= HEAD 2>&1 || true)"
+  fi
+  log "变更文件：$(printf '%s' "$files" | tr '\n' ' ' | cut -c1-300)"
+  printf '%s\n' "$files" \
     | grep -qE '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)'
 }
 
@@ -136,16 +145,12 @@ pr_root_has_code_changes() {
     | grep -qE '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)'
 }
 
-# PR 模式下某个子模块从目标指针到源指针的完整 diff
-pr_submodule_diff() {
+# 子模块从 old 指针到 new 指针的完整 diff（PR 和 Push 共用）
+submodule_diff_between() {
   local dir="$1"
-  local old new
-  old="$(git ls-tree "$TARGET_SHA" -- "$dir" 2>/dev/null | awk '{print $3}')"
-  new="$(git ls-tree "$SOURCE_SHA" -- "$dir" 2>/dev/null | awk '{print $3}')"
-  if [[ -z "$old" || -z "$new" || "$old" == "$new" ]]; then
-    return 0
-  fi
-  if [[ ! -e "$dir/.git" ]]; then
+  local old="$2"
+  local new="$3"
+  if [[ -z "$old" || -z "$new" || "$old" == "$new" || ! -e "$dir/.git" ]]; then
     return 0
   fi
   local mirror=""
@@ -168,6 +173,48 @@ pr_submodule_diff() {
     return 0
   fi
   git -C "$dir" diff --no-color "$old" "$new" -- \
+    ':(exclude)package-lock.json' \
+    ':(exclude)go.sum' \
+    ':(exclude)*.min.js' \
+    ':(exclude)dist/**' 2>/dev/null || true
+}
+
+# PR 模式下某个子模块从目标指针到源指针的完整 diff
+pr_submodule_diff() {
+  local dir="$1"
+  local old new
+  old="$(git ls-tree "$TARGET_SHA" -- "$dir" 2>/dev/null | awk '{print $3}')"
+  new="$(git ls-tree "$SOURCE_SHA" -- "$dir" 2>/dev/null | awk '{print $3}')"
+  submodule_diff_between "$dir" "$old" "$new"
+}
+
+# Push 模式下某个子模块从推送前指针到 HEAD 指针的完整 diff
+push_submodule_diff() {
+  local dir="$1"
+  local old new
+  old="$(git ls-tree "$PUSH_BEFORE" -- "$dir" 2>/dev/null | awk '{print $3}')"
+  new="$(git ls-tree "$GITEE_COMMIT" -- "$dir" 2>/dev/null | awk '{print $3}')"
+  submodule_diff_between "$dir" "$old" "$new"
+}
+
+# 从 Gitee Go 构建详情里取 push 的 before SHA（多提交推送时用于完整 diff）
+load_push_before() {
+  local build_id="${AGILE_PIPELINE_BUILD_ID:-}"
+  if [[ -z "$build_id" || -z "$MIRROR_TOKEN" ]]; then
+    return 0
+  fi
+  local before
+  before="$(curl -sS --max-time 20 -H "Authorization: Bearer ${MIRROR_TOKEN}" \
+    "https://go-api.gitee.com/${GITEE_REPO}/gitee-go/ipipe/rest/v5/pipelines/builds/${build_id}" \
+    2>/dev/null | jq -r '.data.trigger.data.data.before // empty' 2>/dev/null || true)"
+  if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
+    PUSH_BEFORE="$before"
+  fi
+}
+
+# Push 模式下根仓库从 before 到 HEAD 的 diff
+push_super_diff() {
+  git diff --no-color "$PUSH_BEFORE" "$GITEE_COMMIT" -- \
     ':(exclude)package-lock.json' \
     ':(exclude)go.sum' \
     ':(exclude)*.min.js' \
@@ -225,6 +272,12 @@ review_area() {
       后端) diff="$(pr_submodule_diff "DanmuKuWeb-Server")" ;;
       前端) diff="$(pr_submodule_diff "DanmuKuWeb-Web")" ;;
       *)    diff="$(pr_super_diff)" ;;
+    esac
+  elif [[ -n "$PUSH_BEFORE" ]]; then
+    case "$label" in
+      后端) diff="$(push_submodule_diff "DanmuKuWeb-Server")" ;;
+      前端) diff="$(push_submodule_diff "DanmuKuWeb-Web")" ;;
+      *)    diff="$(push_super_diff)" ;;
     esac
   else
     diff="$(repo_diff "$dir")"
@@ -377,7 +430,24 @@ if [[ "$IS_PR" == "1" ]]; then
   exit 0
 fi
 
-# Push 模式
+# Push 模式：尽量取到推送前的 SHA，审查整次推送而不是只看最后一次提交
+load_push_before
+if [[ -n "$PUSH_BEFORE" ]]; then
+  push_remote="https://gitee.com/${GITEE_REPO}.git"
+  if [[ -n "$MIRROR_TOKEN" ]]; then
+    GIT_ASKPASS="$PWD/scripts/git-askpass.sh" GIT_TERMINAL_PROMPT=0 \
+      git fetch --depth=1 "$push_remote" "$PUSH_BEFORE" >/dev/null 2>&1 \
+      || { log "Push：拉取 before ${PUSH_BEFORE:0:7} 失败，回退到单提交审查"; PUSH_BEFORE=""; }
+  else
+    PUSH_BEFORE=""
+  fi
+fi
+if [[ -n "$PUSH_BEFORE" ]]; then
+  log "Push：审查 ${PUSH_BEFORE:0:7}..${GITEE_COMMIT:0:7}"
+else
+  log "Push：审查最后一次提交 ${SHORT_SHA}"
+fi
+
 if [[ -f DanmuKuWeb-Server/go.mod ]]; then
   review_area "DanmuKuWeb-Server" "后端" "Go 后端：Gin + SQLite + WebSocket"
 fi
