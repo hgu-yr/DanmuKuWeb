@@ -43,6 +43,7 @@ fi
 TARGET_SHA="${GITEE_COMMIT:-}"
 SOURCE_SHA="${GITEE_SOURCE_COMMIT:-}"
 PUSH_BEFORE=""
+PUSH_BEFORE_LOOKUP_FAILED=0
 PR_BODY=""
 
 log() { printf '[ai-review] %s\n' "$*" >&2; }
@@ -92,9 +93,15 @@ repo_diff() {
 root_has_code_changes() {
   local files
   if [[ -n "${PUSH_BEFORE:-}" ]]; then
-    files="$(git diff --name-only "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null || true)"
+    if ! files="$(git diff --name-only "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null)"; then
+      log "根仓库 diff 失败，按有变更处理"
+      return 0
+    fi
   else
-    files="$(git show --name-only --format= HEAD 2>/dev/null || true)"
+    if ! files="$(git show --name-only --format= HEAD 2>/dev/null)"; then
+      log "根仓库 diff 失败，按有变更处理"
+      return 0
+    fi
   fi
   log "变更文件：$(printf '%s' "$files" | tr '\n' ' ' | cut -c1-300)"
   printf '%s\n' "$files" \
@@ -132,11 +139,16 @@ prepare_pr_source() {
 super_diff_between() {
   local old="$1"
   local new="$2"
-  git diff --no-color "$old" "$new" -- \
+  local out
+  if ! out="$(git diff --no-color "$old" "$new" -- \
     ':(exclude)package-lock.json' \
     ':(exclude)go.sum' \
     ':(exclude)*.min.js' \
-    ':(exclude)dist/**' 2>/dev/null || true
+    ':(exclude)dist/**' 2>/dev/null)"; then
+    log "根仓库 diff 失败：${old:0:7}..${new:0:7}"
+    return 1
+  fi
+  printf '%s' "$out"
 }
 
 # PR 模式下根仓库（CI/脚本/文档）的 diff
@@ -176,14 +188,19 @@ submodule_diff_between() {
     || log "${dir}：拉取 ${new:0:7} 失败"
   if ! git -C "$dir" cat-file -e "${old}^{commit}" 2>/dev/null \
     || ! git -C "$dir" cat-file -e "${new}^{commit}" 2>/dev/null; then
-    log "${dir}：缺少 ${old:0:7}..${new:0:7} 的提交，跳过子模块 diff"
-    return 0
+    log "${dir}：缺少 ${old:0:7}..${new:0:7} 的提交，无法审查子模块 diff"
+    return 1
   fi
-  git -C "$dir" diff --no-color "$old" "$new" -- \
+  local out
+  if ! out="$(git -C "$dir" diff --no-color "$old" "$new" -- \
     ':(exclude)package-lock.json' \
     ':(exclude)go.sum' \
     ':(exclude)*.min.js' \
-    ':(exclude)dist/**' 2>/dev/null || true
+    ':(exclude)dist/**' 2>/dev/null)"; then
+    log "${dir}：diff ${old:0:7}..${new:0:7} 失败"
+    return 1
+  fi
+  printf '%s' "$out"
 }
 
 # PR 模式下某个子模块从目标指针到源指针的完整 diff
@@ -218,6 +235,7 @@ load_push_before() {
   if ! resp="$(curl -sS -f --max-time 20 -H "Authorization: Bearer ${MIRROR_TOKEN}" \
     "https://go-api.gitee.com/${GITEE_REPO}/gitee-go/ipipe/rest/v5/pipelines/builds/${build_id}" 2>&1)"; then
     log "Push：取 before SHA 失败：$(printf '%s' "$resp" | head -c 200)"
+    PUSH_BEFORE_LOOKUP_FAILED=1
     return 0
   fi
   local before
@@ -278,21 +296,24 @@ review_area() {
   local label="$2"
   local desc="$3"
   local diff
+  local sub_rc=0
   if [[ "$IS_PR" == "1" ]]; then
     case "$label" in
-      后端) diff="$(pr_submodule_diff "DanmuKuWeb-Server")" ;;
-      前端) diff="$(pr_submodule_diff "DanmuKuWeb-Web")" ;;
-      *)    diff="$(pr_super_diff)" ;;
+      后端) diff="$(pr_submodule_diff "DanmuKuWeb-Server")" || sub_rc=$? ;;
+      前端) diff="$(pr_submodule_diff "DanmuKuWeb-Web")" || sub_rc=$? ;;
+      *)    diff="$(pr_super_diff)" || sub_rc=$? ;;
     esac
+    if [[ -z "$diff" && "$sub_rc" -ne 0 ]]; then
+      log "${label}：PR diff 失败，跳过"
+    fi
   elif [[ -n "$PUSH_BEFORE" ]]; then
-    local sub_rc=0
     case "$label" in
       后端) diff="$(push_submodule_diff "DanmuKuWeb-Server")" || sub_rc=$? ;;
       前端) diff="$(push_submodule_diff "DanmuKuWeb-Web")" || sub_rc=$? ;;
-      *)    diff="$(push_super_diff)" ;;
+      *)    diff="$(push_super_diff)" || sub_rc=$? ;;
     esac
     if [[ -z "$diff" && "$sub_rc" -ne 0 ]]; then
-      log "${label}：子模块指针解析失败，回退到单提交审查"
+      log "${label}：区间 diff 失败，回退到单提交审查"
       diff="$(repo_diff "$dir")"
     fi
   else
@@ -460,12 +481,16 @@ if [[ -n "$PUSH_BEFORE" ]]; then
   elif ! git merge-base --is-ancestor "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null; then
     # 浅克隆可能缺少父链，先深挖一次再判断（强推时 before 不是祖先）
     GIT_ASKPASS="$PWD/scripts/git-askpass.sh" GIT_TERMINAL_PROMPT=0 \
-      git fetch --deepen=50 "$push_remote" "$GITEE_BRANCH" >/dev/null 2>&1 || true
+      git fetch --deepen=50 "$push_remote" >/dev/null 2>&1 \
+      || log "Push：deepen 失败，无法校验 before 祖先关系"
     if ! git merge-base --is-ancestor "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null; then
       log "Push：before ${PUSH_BEFORE:0:7} 不是 HEAD 的祖先（可能强推），回退到单提交审查"
       PUSH_BEFORE=""
     fi
   fi
+fi
+if [[ "$PUSH_BEFORE_LOOKUP_FAILED" == "1" ]]; then
+  log "Push：before 获取失败，已降级为单提交审查"
 fi
 if [[ -n "$PUSH_BEFORE" ]]; then
   log "Push：审查 ${PUSH_BEFORE:0:7}..${GITEE_COMMIT:0:7}"
