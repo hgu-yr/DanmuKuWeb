@@ -64,8 +64,13 @@ init_submodules() {
     return 1
   fi
   log "从 Gitee 镜像初始化子模块"
-  git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-server.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Server.git"
-  git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-web.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+  export GIT_CONFIG_COUNT=2
+  export GIT_CONFIG_KEY_0="url.https://gitee.com/yr007/danmu-ku-web-server.git.insteadOf"
+  export GIT_CONFIG_VALUE_0="git@github.com:hgu-yr/DanmuKuWeb-Server.git"
+  export GIT_CONFIG_KEY_1="url.https://gitee.com/yr007/danmu-ku-web-web.git.insteadOf"
+  export GIT_CONFIG_VALUE_1="git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+  export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
+  export GIT_TERMINAL_PROMPT=0
   git submodule update --init --recursive
 }
 
@@ -95,7 +100,9 @@ prepare_pr_source() {
   fi
   local remote="origin"
   if [[ -n "$MIRROR_TOKEN" ]]; then
-    remote="https://yr007:${MIRROR_TOKEN}@gitee.com/${GITEE_REPO}.git"
+    remote="https://gitee.com/${GITEE_REPO}.git"
+    export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
+    export GIT_TERMINAL_PROMPT=0
   fi
   # 工作区可能是 PR 合并提交的浅克隆，目标提交不一定在本地，先补拉
   if [[ -n "$TARGET_SHA" ]]; then
@@ -141,8 +148,20 @@ pr_submodule_diff() {
   if [[ ! -e "$dir/.git" ]]; then
     return 0
   fi
-  git -C "$dir" fetch --depth=1 origin "$old" >/dev/null 2>&1 || true
-  git -C "$dir" fetch --depth=1 origin "$new" >/dev/null 2>&1 || true
+  local mirror=""
+  case "$dir" in
+    DanmuKuWeb-Server) mirror="danmu-ku-web-server" ;;
+    DanmuKuWeb-Web)    mirror="danmu-ku-web-web" ;;
+  esac
+  local sub_remote="origin"
+  if [[ -n "$mirror" ]]; then
+    sub_remote="https://gitee.com/yr007/${mirror}.git"
+  fi
+  local askpass="$PWD/scripts/git-askpass.sh"
+  GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch --depth=1 "$sub_remote" "$old" >/dev/null 2>&1 \
+    || log "${dir}：拉取 ${old:0:7} 失败"
+  GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git -C "$dir" fetch --depth=1 "$sub_remote" "$new" >/dev/null 2>&1 \
+    || log "${dir}：拉取 ${new:0:7} 失败"
   if ! git -C "$dir" cat-file -e "${old}^{commit}" 2>/dev/null \
     || ! git -C "$dir" cat-file -e "${new}^{commit}" 2>/dev/null; then
     log "${dir}：缺少 ${old:0:7}..${new:0:7} 的提交，跳过子模块 diff"

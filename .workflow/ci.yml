@@ -58,8 +58,13 @@ stages:
                 echo "请在 Gitee Go → 流水线 → 通用变量中添加 MIRROR_TOKEN（projects 权限的 Gitee 私人令牌）。" >&2
                 exit 1
               fi
-              git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-server.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Server.git"
-              git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-web.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              export GIT_CONFIG_COUNT=2
+              export GIT_CONFIG_KEY_0="url.https://gitee.com/yr007/danmu-ku-web-server.git.insteadOf"
+              export GIT_CONFIG_VALUE_0="git@github.com:hgu-yr/DanmuKuWeb-Server.git"
+              export GIT_CONFIG_KEY_1="url.https://gitee.com/yr007/danmu-ku-web-web.git.insteadOf"
+              export GIT_CONFIG_VALUE_1="git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
+              export GIT_TERMINAL_PROMPT=0
               git submodule update --init --recursive
             fi
           - cd DanmuKuWeb-Server
@@ -93,8 +98,13 @@ stages:
                 echo "请在 Gitee Go → 流水线 → 通用变量中添加 MIRROR_TOKEN（projects 权限的 Gitee 私人令牌）。" >&2
                 exit 1
               fi
-              git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-server.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Server.git"
-              git config --global url."https://yr007:${MIRROR_TOKEN}@gitee.com/yr007/danmu-ku-web-web.git".insteadOf "git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              export GIT_CONFIG_COUNT=2
+              export GIT_CONFIG_KEY_0="url.https://gitee.com/yr007/danmu-ku-web-server.git.insteadOf"
+              export GIT_CONFIG_VALUE_0="git@github.com:hgu-yr/DanmuKuWeb-Server.git"
+              export GIT_CONFIG_KEY_1="url.https://gitee.com/yr007/danmu-ku-web-web.git.insteadOf"
+              export GIT_CONFIG_VALUE_1="git@github.com:hgu-yr/DanmuKuWeb-Web.git"
+              export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
+              export GIT_TERMINAL_PROMPT=0
               git submodule update --init --recursive
             fi
           - cd DanmuKuWeb-Web

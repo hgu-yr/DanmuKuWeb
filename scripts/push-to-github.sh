@@ -29,6 +29,26 @@ SUBMODULES=(DanmuKuWeb-Server DanmuKuWeb-Web)
 # CI 从这些镜像拉取子模块，所以每次推送后要同步过去。
 GITEE_OWNER="yr007"
 GITEE_TOKEN="${GITEE_TOKEN:-$(cat "${HOME}/.config/danmuku/gitee_token" 2>/dev/null || true)}"
+export GITEE_TOKEN
+
+# 用 askpass 注入凭据，避免 token 出现在 URL、命令行或 git 配置里。
+GITEE_ASKPASS=""
+if [[ -n "${GITEE_TOKEN}" ]]; then
+  GITEE_ASKPASS="$(mktemp)"
+  cat > "${GITEE_ASKPASS}" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  *Username*) printf '%s\n' "${GITEE_USER:-yr007}" ;;
+  *Password*) printf '%s\n' "${GITEE_TOKEN:-}" ;;
+esac
+ASKPASS
+  chmod +x "${GITEE_ASKPASS}"
+  trap 'rm -f "${GITEE_ASKPASS}"' EXIT
+fi
+
+gitee_git() {
+  GIT_ASKPASS="${GITEE_ASKPASS}" GIT_TERMINAL_PROMPT=0 git "$@"
+}
 
 gitee_mirror_for() {
   case "$1" in
@@ -49,10 +69,24 @@ sync_to_gitee() {
     echo "    ${dir}: 未配置 GITEE_TOKEN，跳过 Gitee 镜像同步" >&2
     return 0
   fi
-  local url="https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${repo}.git"
+  local url="https://gitee.com/${GITEE_OWNER}/${repo}.git"
+  local branch
+  branch="$(current_branch "$dir")"
+  local branches=("main")
+  if [[ "$branch" != "main" ]]; then
+    branches+=("$branch")
+  fi
   echo "    ${dir}: push -> gitee.com/${GITEE_OWNER}/${repo}"
-  git -C "$dir" push --force --all "$url"
-  git -C "$dir" push --force --tags "$url"
+  local b remote_sha
+  for b in "${branches[@]}"; do
+    remote_sha="$(gitee_git ls-remote "$url" "refs/heads/${b}" | awk '{print $1}')"
+    if [[ -n "$remote_sha" ]]; then
+      gitee_git -C "$dir" push --force-with-lease="${b}:${remote_sha}" "$url" "$b"
+    else
+      gitee_git -C "$dir" push "$url" "$b"
+    fi
+  done
+  gitee_git -C "$dir" push --force-with-lease --tags "$url" || true
 }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -135,8 +169,13 @@ push_branch_and_main "${ROOT_DIR}" "${ROOT_REPO}"
 
 echo "==> 4/4 推送根仓库到 Gitee（流水线从 Gitee main 读取）"
 if [[ -n "${GITEE_TOKEN}" ]]; then
-  gitee_root_url="https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${ROOT_REPO}.git"
-  git push --force "$gitee_root_url" "HEAD:main"
+  gitee_root_url="https://gitee.com/${GITEE_OWNER}/${ROOT_REPO}.git"
+  remote_sha="$(gitee_git ls-remote "$gitee_root_url" refs/heads/main | awk '{print $1}')"
+  if [[ -n "$remote_sha" ]]; then
+    gitee_git push --force-with-lease="main:${remote_sha}" "$gitee_root_url" "HEAD:main"
+  else
+    gitee_git push "$gitee_root_url" "HEAD:main"
+  fi
   echo "    已同步 Gitee main"
 else
   echo "    未配置 GITEE_TOKEN，跳过；请到 Gitee 仓库页点「强制同步」" >&2
