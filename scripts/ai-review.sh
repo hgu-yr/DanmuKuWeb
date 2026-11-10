@@ -97,6 +97,10 @@ prepare_pr_source() {
   if [[ -n "$MIRROR_TOKEN" ]]; then
     remote="https://yr007:${MIRROR_TOKEN}@gitee.com/${GITEE_REPO}.git"
   fi
+  # 工作区可能是 PR 合并提交的浅克隆，目标提交不一定在本地，先补拉
+  if [[ -n "$TARGET_SHA" ]]; then
+    git fetch --depth=1 "$remote" "$TARGET_SHA" >/dev/null 2>&1 || true
+  fi
   if git fetch --depth=1 "$remote" "$SOURCE_SHA" >/dev/null 2>&1; then
     return 0
   fi
