@@ -118,7 +118,10 @@ pr_super_diff() {
 }
 
 pr_root_has_code_changes() {
-  git diff --name-only "$TARGET_SHA" "$SOURCE_SHA" 2>/dev/null \
+  local files
+  files="$(git diff --name-only "$TARGET_SHA" "$SOURCE_SHA" 2>&1 || true)"
+  log "PR 文件列表：$(printf '%s' "$files" | tr '\n' ' ' | cut -c1-300)"
+  printf '%s\n' "$files" \
     | grep -qE '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)'
 }
 
