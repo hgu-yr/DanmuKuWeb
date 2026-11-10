@@ -304,7 +304,8 @@ review_area() {
       *)    diff="$(pr_super_diff)" || sub_rc=$? ;;
     esac
     if [[ -z "$diff" && "$sub_rc" -ne 0 ]]; then
-      log "${label}：PR diff 失败，跳过"
+      log "${label}：PR diff 失败，回退到单提交审查"
+      diff="$(repo_diff "$dir")"
     fi
   elif [[ -n "$PUSH_BEFORE" ]]; then
     case "$label" in
