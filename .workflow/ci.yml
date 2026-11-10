@@ -25,7 +25,7 @@ displayName: CI（测试 + 构建）
 
 triggers:
   trigger: auto
-  # 所有分支推送都触发（正则 .* 匹配所有分支）
+  # 所有分支推送、所有目标分支的 PR 都触发（正则 .* 匹配所有分支）
   push:
     branches:
       include:
@@ -33,7 +33,7 @@ triggers:
   pr:
     branches:
       include:
-        - main
+        - ".*"
 
 stages:
   - name: backend
