@@ -45,7 +45,7 @@ SOURCE_SHA="${GITEE_SOURCE_COMMIT:-}"
 PUSH_BEFORE=""
 PR_BODY=""
 
-log() { printf '[ai-review] %s\n' "$*"; }
+log() { printf '[ai-review] %s\n' "$*" >&2; }
 
 if [[ -z "$AI_API_KEY" ]]; then
   log "未配置 AI_API_KEY，跳过 AI 审查（不阻塞构建）"
@@ -92,9 +92,9 @@ repo_diff() {
 root_has_code_changes() {
   local files
   if [[ -n "${PUSH_BEFORE:-}" ]]; then
-    files="$(git diff --name-only "$PUSH_BEFORE" "$GITEE_COMMIT" 2>&1 || true)"
+    files="$(git diff --name-only "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null || true)"
   else
-    files="$(git show --name-only --format= HEAD 2>&1 || true)"
+    files="$(git show --name-only --format= HEAD 2>/dev/null || true)"
   fi
   log "变更文件：$(printf '%s' "$files" | tr '\n' ' ' | cut -c1-300)"
   printf '%s\n' "$files" \
@@ -128,13 +128,20 @@ prepare_pr_source() {
   return 1
 }
 
-# PR 模式下根仓库（CI/脚本/文档）的 diff
-pr_super_diff() {
-  git diff --no-color "$TARGET_SHA" "$SOURCE_SHA" -- \
+# PR / Push 共用的根仓库 diff
+super_diff_between() {
+  local old="$1"
+  local new="$2"
+  git diff --no-color "$old" "$new" -- \
     ':(exclude)package-lock.json' \
     ':(exclude)go.sum' \
     ':(exclude)*.min.js' \
     ':(exclude)dist/**' 2>/dev/null || true
+}
+
+# PR 模式下根仓库（CI/脚本/文档）的 diff
+pr_super_diff() {
+  super_diff_between "$TARGET_SHA" "$SOURCE_SHA"
 }
 
 pr_root_has_code_changes() {
@@ -194,6 +201,10 @@ push_submodule_diff() {
   local old new
   old="$(git ls-tree "$PUSH_BEFORE" -- "$dir" 2>/dev/null | awk '{print $3}')"
   new="$(git ls-tree "$GITEE_COMMIT" -- "$dir" 2>/dev/null | awk '{print $3}')"
+  if [[ -z "$old" || -z "$new" ]]; then
+    log "${dir}：无法解析子模块指针（before/HEAD），回退单提交 diff"
+    return 1
+  fi
   submodule_diff_between "$dir" "$old" "$new"
 }
 
@@ -203,10 +214,14 @@ load_push_before() {
   if [[ -z "$build_id" || -z "$MIRROR_TOKEN" ]]; then
     return 0
   fi
+  local resp
+  if ! resp="$(curl -sS -f --max-time 20 -H "Authorization: Bearer ${MIRROR_TOKEN}" \
+    "https://go-api.gitee.com/${GITEE_REPO}/gitee-go/ipipe/rest/v5/pipelines/builds/${build_id}" 2>&1)"; then
+    log "Push：取 before SHA 失败：$(printf '%s' "$resp" | head -c 200)"
+    return 0
+  fi
   local before
-  before="$(curl -sS --max-time 20 -H "Authorization: Bearer ${MIRROR_TOKEN}" \
-    "https://go-api.gitee.com/${GITEE_REPO}/gitee-go/ipipe/rest/v5/pipelines/builds/${build_id}" \
-    2>/dev/null | jq -r '.data.trigger.data.data.before // empty' 2>/dev/null || true)"
+  before="$(printf '%s' "$resp" | jq -r '.data.trigger.data.data.before // empty' 2>/dev/null || true)"
   if [[ -n "$before" && "$before" != "0000000000000000000000000000000000000000" ]]; then
     PUSH_BEFORE="$before"
   fi
@@ -214,11 +229,7 @@ load_push_before() {
 
 # Push 模式下根仓库从 before 到 HEAD 的 diff
 push_super_diff() {
-  git diff --no-color "$PUSH_BEFORE" "$GITEE_COMMIT" -- \
-    ':(exclude)package-lock.json' \
-    ':(exclude)go.sum' \
-    ':(exclude)*.min.js' \
-    ':(exclude)dist/**' 2>/dev/null || true
+  super_diff_between "$PUSH_BEFORE" "$GITEE_COMMIT"
 }
 
 # 发布或更新 PR 评论（用 HTML 注释做标记，同一 PR 只保留一条）
@@ -274,11 +285,16 @@ review_area() {
       *)    diff="$(pr_super_diff)" ;;
     esac
   elif [[ -n "$PUSH_BEFORE" ]]; then
+    local sub_rc=0
     case "$label" in
-      后端) diff="$(push_submodule_diff "DanmuKuWeb-Server")" ;;
-      前端) diff="$(push_submodule_diff "DanmuKuWeb-Web")" ;;
+      后端) diff="$(push_submodule_diff "DanmuKuWeb-Server")" || sub_rc=$? ;;
+      前端) diff="$(push_submodule_diff "DanmuKuWeb-Web")" || sub_rc=$? ;;
       *)    diff="$(push_super_diff)" ;;
     esac
+    if [[ -z "$diff" && "$sub_rc" -ne 0 ]]; then
+      log "${label}：子模块指针解析失败，回退到单提交审查"
+      diff="$(repo_diff "$dir")"
+    fi
   else
     diff="$(repo_diff "$dir")"
   fi
@@ -436,10 +452,19 @@ if [[ -n "$PUSH_BEFORE" ]]; then
   push_remote="https://gitee.com/${GITEE_REPO}.git"
   if [[ -n "$MIRROR_TOKEN" ]]; then
     GIT_ASKPASS="$PWD/scripts/git-askpass.sh" GIT_TERMINAL_PROMPT=0 \
-      git fetch --depth=1 "$push_remote" "$PUSH_BEFORE" >/dev/null 2>&1 \
-      || { log "Push：拉取 before ${PUSH_BEFORE:0:7} 失败，回退到单提交审查"; PUSH_BEFORE=""; }
-  else
+      git fetch --depth=1 "$push_remote" "$PUSH_BEFORE" >/dev/null 2>&1 || true
+  fi
+  if ! git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+    log "Push：before ${PUSH_BEFORE:0:7} 不可达，回退到单提交审查"
     PUSH_BEFORE=""
+  elif ! git merge-base --is-ancestor "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null; then
+    # 浅克隆可能缺少父链，先深挖一次再判断（强推时 before 不是祖先）
+    GIT_ASKPASS="$PWD/scripts/git-askpass.sh" GIT_TERMINAL_PROMPT=0 \
+      git fetch --deepen=50 "$push_remote" "$GITEE_BRANCH" >/dev/null 2>&1 || true
+    if ! git merge-base --is-ancestor "$PUSH_BEFORE" "$GITEE_COMMIT" 2>/dev/null; then
+      log "Push：before ${PUSH_BEFORE:0:7} 不是 HEAD 的祖先（可能强推），回退到单提交审查"
+      PUSH_BEFORE=""
+    fi
   fi
 fi
 if [[ -n "$PUSH_BEFORE" ]]; then
