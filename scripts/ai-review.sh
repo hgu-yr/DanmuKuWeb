@@ -87,15 +87,20 @@ root_has_code_changes() {
     | grep -qE '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)'
 }
 
-# 拉取 PR 源提交；优先按 SHA，失败再按源分支
+# 拉取 PR 源提交；优先按 SHA，失败再按源分支。
+# 构建容器里没有主仓库的检出凭据，所以用 MIRROR_TOKEN 显式拼一个带凭据的 URL。
 prepare_pr_source() {
   if [[ -z "$SOURCE_SHA" ]]; then
     return 1
   fi
-  if git fetch --depth=1 origin "$SOURCE_SHA" >/dev/null 2>&1; then
+  local remote="origin"
+  if [[ -n "$MIRROR_TOKEN" ]]; then
+    remote="https://yr007:${MIRROR_TOKEN}@gitee.com/${GITEE_REPO}.git"
+  fi
+  if git fetch --depth=1 "$remote" "$SOURCE_SHA" >/dev/null 2>&1; then
     return 0
   fi
-  if [[ -n "${GITEE_SOURCE_BRANCH:-}" ]] && git fetch --depth=1 origin "$GITEE_SOURCE_BRANCH" >/dev/null 2>&1; then
+  if [[ -n "${GITEE_SOURCE_BRANCH:-}" ]] && git fetch --depth=1 "$remote" "$GITEE_SOURCE_BRANCH" >/dev/null 2>&1; then
     SOURCE_SHA="$(git rev-parse FETCH_HEAD)"
     return 0
   fi
