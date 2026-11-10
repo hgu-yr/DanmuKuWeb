@@ -36,24 +36,6 @@ triggers:
         - main
 
 stages:
-  # 放在最前面：即使后端/前端构建失败，也保证每次推送都有 AI 审查记录。
-  # 审查失败不阻塞构建（脚本内部吞掉错误，始终 exit 0）。
-  - name: ai_review
-    displayName: AI 代码审查
-    strategy: naturally
-    trigger: auto
-    steps:
-      - step: execute@docker
-        name: ai_review
-        displayName: 审查提交并创建 Issue
-        certificate: ''
-        image: docker.m.daocloud.io/library/alpine:3.24
-        command:
-          - set -eu
-          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
-          - apk add --no-cache bash git curl jq
-          - bash scripts/ai-review.sh
-
   - name: backend
     displayName: 后端
     strategy: naturally
@@ -119,6 +101,24 @@ stages:
           - npm ci --no-audit --no-fund
           - npm run type-check
           - npm run build
+
+  # 放在最后：只有后端和前端都构建成功才会执行，
+  # 避免构建失败时白白消耗模型 token。
+  - name: ai_review
+    displayName: AI 代码审查
+    strategy: naturally
+    trigger: auto
+    steps:
+      - step: execute@docker
+        name: ai_review
+        displayName: 审查提交并创建 Issue
+        certificate: ''
+        image: docker.m.daocloud.io/library/alpine:3.24
+        command:
+          - set -eu
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
+          - apk add --no-cache bash git curl jq
+          - bash scripts/ai-review.sh
 
 # 关联 Gitee Go「通用变量」，构建时注入为同名环境变量。
 # 变量值保存在「流水线 → 通用变量」中，不写进仓库。
