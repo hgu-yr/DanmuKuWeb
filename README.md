@@ -81,7 +81,18 @@ docker compose up -d --build
 - 更新：`git pull && git submodule update --init --recursive && docker compose up -d --build`
 - 自动备份：server 默认每天用 SQLite `VACUUM INTO` 生成一致性快照到 `data/backups/`，
   保留最近 7 份；可用 `BACKUP_DIR` / `BACKUP_INTERVAL` / `BACKUP_KEEP` 调整。
-  恢复：先停 server，再执行 `./scripts/restore-sqlite.sh data/backups/<快照>.db`
+- Docker 恢复：先 `docker compose stop server`，快照在 `danmuku-data` 数据卷的
+  `/app/data/backups/` 内，按下面方式在卷内操作，避免恢复到宿主机错误路径：
+  ```bash
+  docker run --rm -v danmuku_danmuku-data:/data alpine ls -lt /data/backups | head
+  docker run --rm -v danmuku_danmuku-data:/data alpine sh -c '
+    cp /data/danmuku.db /data/danmuku.db.before-restore.$(date +%s) 2>/dev/null || true
+    rm -f /data/danmuku.db-wal /data/danmuku.db-shm
+    cp /data/backups/<快照>.db /data/danmuku.db'
+  docker compose start server
+  ```
+- 非 Docker 部署：`./scripts/restore-sqlite.sh <快照>.db <target.db>`，
+  脚本会校验 SQLite 文件头并保留当前库副本
 - 手动备份数据卷：
   ```bash
   docker run --rm -v danmuku_danmuku-data:/data -v "$PWD":/backup alpine \
