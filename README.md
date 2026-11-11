@@ -29,6 +29,14 @@
 - 进入页面：前端 `GET /api/v1/danmaku` 拉取最近历史弹幕做回放，然后连接 `/ws` 接收实时弹幕
 - 重启恢复：启动时从 `danmaku` 表加载未过期弹幕，重启后仍能回放（详见下方「弹幕持久化」的已知限制）
 
+### 数据访问
+
+- 驱动：`github.com/glebarez/sqlite`（基于 modernc 的纯 Go SQLite，`CGO_ENABLED=0` 可编译）
+- ORM：GORM 负责仓储层 CRUD 与批量 upsert；聚合统计和后台白名单查询继续使用参数化 SQL，不拼接用户输入
+- 连接：GORM 与 `database/sql` 复用同一个连接池（`journal_mode=WAL`、`busy_timeout=5000`、单连接串行写入）
+- 表结构：只由 `internal/store/migrations/*.sql` 管理，**不使用 AutoMigrate**；加字段或索引请新增迁移文件
+- 时间列统一存 RFC3339Nano 文本（UTC），字符串比较即时间比较，与历史数据格式一致
+
 ### 弹幕持久化
 
 - SQLite 默认 `data/danmuku.db`（`DB_PATH`）；Docker 部署需挂载 `danmuku-data` 卷
