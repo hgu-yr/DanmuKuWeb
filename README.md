@@ -79,7 +79,10 @@ docker compose up -d --build
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
 - `server` 不对外暴露 8080，SQLite 数据放在 `danmuku-data` 命名卷
 - 更新：`git pull && git submodule update --init --recursive && docker compose up -d --build`
-- 备份数据卷：
+- 自动备份：server 默认每天用 SQLite `VACUUM INTO` 生成一致性快照到 `data/backups/`，
+  保留最近 7 份；可用 `BACKUP_DIR` / `BACKUP_INTERVAL` / `BACKUP_KEEP` 调整。
+  恢复：先停 server，再执行 `./scripts/restore-sqlite.sh data/backups/<快照>.db`
+- 手动备份数据卷：
   ```bash
   docker run --rm -v danmuku_danmuku-data:/data -v "$PWD":/backup alpine \
     tar czf /backup/danmuku-data.tar.gz -C /data .
@@ -88,16 +91,31 @@ docker compose up -d --build
 - 生产建议在 web 前再加一层 HTTPS 反向代理（Caddy / Traefik / Nginx），并确保
   `ALLOWED_ORIGINS` 与实际域名一致
 
+## 观测
+
+- `GET /health`：liveness，只证明进程能应答
+- `GET /readyz`：readiness，额外 ping SQLite，失败返回 503
+- `GET /metrics`：Prometheus 指标（HTTP 延迟、WS 连接/丢弃、弹幕事件、LLM 延迟/跳过）
+- 日志：JSON（slog），包含 `request_id`、`route`、`status`、`latency_ms`
+- `server` 端口不对公网发布，`/metrics` 只在容器网络内可访问
+
 ## CI 与代码质检
 
 `.github/workflows/ci.yml` 包含：
 
 1. **代码质检**：Go `build` / `vet` / `test`、`staticcheck`、`govulncheck`；
-   前端 `npm ci`、`vue-tsc`、`vite build`、`npm audit`
+   前端 `npm ci`、`eslint`、`vitest`、`vue-tsc`、`vite build`、`npm audit`
 2. **Docker 构建**：构建 server / web 镜像，并校验 `docker compose config`
 3. **PR 评论**：质检和 Docker 结果自动汇总到 PR 评论（同一条评论更新，不刷屏）
 4. **镜像发布**：`main` 分支通过后推送 `ghcr.io/<owner>/danmuku-server` 与
    `ghcr.io/<owner>/danmuku-web`
+
+职责划分：
+
+- **GitHub Actions** 是权威质量门禁：staticcheck / govulncheck / Docker / 镜像发布
+- **Gitee Go** 负责镜像构建反馈 + AI 审查与 Issue 跟踪；后端/前端构建通过后才执行审查
+- AI 审查可用 Gitee 通用变量 `AI_REVIEW_ENABLED=0` 关闭
+- 只修改 `scripts/ai-review.sh` 时不会再触发「审查器审自己」的 CI 审查
 
 前置条件：
 
