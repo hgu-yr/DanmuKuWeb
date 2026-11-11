@@ -56,6 +56,10 @@ if [[ -z "$ISSUE_TOKEN" ]]; then
   log "未配置 ISSUE_TOKEN，跳过 Issue/评论创建（不阻塞构建）"
   exit 0
 fi
+if [[ "${AI_REVIEW_ENABLED:-1}" != "1" ]]; then
+  log "AI_REVIEW_ENABLED!=1，跳过 AI 审查"
+  exit 0
+fi
 
 init_submodules() {
   if [[ -f DanmuKuWeb-Server/go.mod && -f DanmuKuWeb-Web/package.json ]]; then
@@ -104,8 +108,18 @@ root_has_code_changes() {
     fi
   fi
   log "变更文件：$(printf '%s' "$files" | tr '\n' ' ' | cut -c1-300)"
-  printf '%s\n' "$files" \
-    | grep -qE '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)'
+
+  # 只改 AI 审查脚本本身时跳过 CI 审计，避免「审查器审自己」的无限循环。
+  # 如果同时改了其他 CI/脚本文档，仍然正常审查。
+  local relevant
+  relevant="$(printf '%s\n' "$files" \
+    | grep -E '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)' \
+    | grep -vE '^scripts/ai-review\.sh$' || true)"
+  if [[ -z "$relevant" ]]; then
+    log "CI 脚本：仅修改 ai-review.sh，跳过自审"
+    return 1
+  fi
+  return 0
 }
 
 # 拉取 PR 源提交；优先按 SHA，失败再按源分支。
