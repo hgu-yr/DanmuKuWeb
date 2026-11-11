@@ -1,4 +1,4 @@
-.PHONY: run server web build test tidy clean
+.PHONY: run server web build test tidy clean env env-check
 
 # 启动后端（默认 :8080）
 server:
@@ -23,6 +23,14 @@ test:
 tidy:
 	cd DanmuKuWeb-Server && go mod tidy
 	cd DanmuKuWeb-Web && npm install
+
+# 从 internal/config/spec.go 重新生成后端 .env.example
+env:
+	cd DanmuKuWeb-Server && go generate ./internal/config
+
+# 校验 .env.example 是否与 spec.go 一致（CI 也会跑）
+env-check:
+	cd DanmuKuWeb-Server && go run ./cmd/genenv -check
 
 clean:
 	cd DanmuKuWeb-Server && make clean

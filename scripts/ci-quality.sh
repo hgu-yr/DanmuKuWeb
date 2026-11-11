@@ -54,6 +54,7 @@ echo "## 后端" >> "$REPORT"
 run_check "go build" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go build ./..."
 run_check "go vet" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go vet ./..."
 run_check "go test" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go test ./..."
+run_check "环境变量模板" block bash -c "cd '$ROOT/DanmuKuWeb-Server' && go run ./cmd/genenv -check"
 
 if command -v staticcheck >/dev/null 2>&1; then
   run_check "staticcheck" warn bash -c "cd '$ROOT/DanmuKuWeb-Server' && staticcheck ./..."

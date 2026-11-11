@@ -52,7 +52,12 @@ make server   # 仅后端（默认 :8080）
 make web      # 仅前端（默认 :5173）
 make test     # 后端测试
 make build    # 生产构建：后端 -> DanmuKuWeb-Server/bin，前端 -> DanmuKuWeb-Web/dist
+make env      # 从 internal/config/spec.go 重新生成后端 .env.example
+make env-check # 校验模板与 spec 一致（CI 也会跑）
 ```
+
+后端的配置项只在 `DanmuKuWeb-Server/internal/config/spec.go` 声明一次：
+默认值与注释写在那里，`.env.example` 由 `make env` 生成，不要手工编辑。
 
 想手动分两个终端跑：
 
@@ -84,6 +89,9 @@ cp .env.example .env
 # 必改：ADMIN_PASSWORD、ALLOWED_ORIGINS（生产填真实域名）
 docker compose up -d --build
 ```
+
+根目录的 `.env.example` 只包含 compose 需要覆盖的变量（端口、管理员、密钥等）；
+后端的完整变量表见 `DanmuKuWeb-Server/.env.example`（由 spec.go 生成）。
 
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
 - `server` 不对外暴露 8080，SQLite 数据放在 `danmuku-data` 命名卷
