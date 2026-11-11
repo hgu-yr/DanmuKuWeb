@@ -21,8 +21,9 @@ if [[ ! -f "$BACKUP" ]]; then
   exit 1
 fi
 
-# 校验文件头，避免把截断/错误文件覆盖到线上库
-if ! head -c 16 "$BACKUP" | grep -q 'SQLite format 3'; then
+# 校验完整 16 字节 SQLite 魔数（"SQLite format 3\0"），避免把截断/错误文件覆盖到线上库。
+SQLITE_MAGIC="53514c69746520666f726d6174203300"
+if [[ "$(head -c 16 "$BACKUP" | od -An -tx1 | tr -d ' \n')" != "$SQLITE_MAGIC" ]]; then
   echo "不是有效的 SQLite 数据库: $BACKUP" >&2
   exit 1
 fi

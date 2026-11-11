@@ -114,7 +114,7 @@ root_has_code_changes() {
   local relevant
   relevant="$(printf '%s\n' "$files" \
     | grep -E '^(\.workflow/|scripts/|README|AGENTS|docker-compose|Makefile|\.env|\.github/)' \
-    | grep -vE '^scripts/ai-review' || true)"
+    | grep -vE '^scripts/ai-review(\.sh|/)' || true)"
   if [[ -z "$relevant" ]]; then
     log "CI 脚本：仅修改 ai-review.sh，跳过自审"
     return 1

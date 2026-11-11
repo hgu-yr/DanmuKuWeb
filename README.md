@@ -85,8 +85,8 @@ docker compose up -d --build
   `/app/data/backups/` 内，按下面方式在卷内操作，避免恢复到宿主机错误路径：
   ```bash
   docker run --rm -v danmuku_danmuku-data:/data alpine ls -lt /data/backups | head
-  docker run --rm -v danmuku_danmuku-data:/data alpine sh -c '
-    cp /data/danmuku.db /data/danmuku.db.before-restore.$(date +%s) 2>/dev/null || true
+  docker run --rm -v danmuku_danmuku-data:/data alpine sh -c 'set -e
+    if [ -f /data/danmuku.db ]; then cp /data/danmuku.db /data/danmuku.db.before-restore.$(date +%s); fi
     rm -f /data/danmuku.db-wal /data/danmuku.db-shm
     cp /data/backups/<快照>.db /data/danmuku.db'
   docker compose start server
