@@ -17,7 +17,7 @@ build:
 	cd DanmuKuWeb-Server && make build
 	cd DanmuKuWeb-Web && npm run build
 
-test:
+test: env-check
 	cd DanmuKuWeb-Server && go test ./...
 
 tidy:
@@ -26,7 +26,7 @@ tidy:
 
 # 从 internal/config/spec.go 重新生成后端 .env.example
 env:
-	cd DanmuKuWeb-Server && go generate ./internal/config
+	cd DanmuKuWeb-Server && go run ./cmd/genenv
 
 # 校验 .env.example 是否与 spec.go 一致（CI 也会跑）
 env-check:

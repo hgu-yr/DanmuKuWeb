@@ -52,7 +52,7 @@ make server   # 仅后端（默认 :8080）
 make web      # 仅前端（默认 :5173）
 make test     # 后端测试
 make build    # 生产构建：后端 -> DanmuKuWeb-Server/bin，前端 -> DanmuKuWeb-Web/dist
-make env      # 从 internal/config/spec.go 重新生成后端 .env.example
+make env       # 从 internal/config/spec.go 重新生成后端 .env.example
 make env-check # 校验模板与 spec 一致（CI 也会跑）
 ```
 
