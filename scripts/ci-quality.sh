@@ -77,6 +77,10 @@ run_check "vite build" block bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm run build
 run_check "npm audit (prod)" warn bash -c "cd '$ROOT/DanmuKuWeb-Web' && npm audit --omit=dev"
 
 echo "" >> "$REPORT"
+echo "## 文档一致性" >> "$REPORT"
+run_check "README 环境变量与 .env.example 一致" block bash "$ROOT/scripts/check-doc-env.sh"
+
+echo "" >> "$REPORT"
 if [ "$FAIL" -eq 0 ]; then
   echo "**结论：通过**" >> "$REPORT"
 else

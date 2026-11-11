@@ -35,7 +35,7 @@
 - 写穿失败只记日志，内存热数据仍可广播，不阻塞发弹幕
 - 普通弹幕 TTL `DANMAKU_TTL`（默认 2h），私密回复 `DANMAKU_REPLY_TTL`（默认 7d）
 - 已知限制：点赞者去重集合不落库，重启后同一用户可再次点赞；点赞数会保留
-- 以上变量都在 `.env.example` / `docker-compose.yml` 中配置，详见「Docker 部署」章节
+- 以上变量在 `DanmuKuWeb-Server/.env.example` 中配置；Docker 部署时 `DB_PATH` 由 compose 固定为 `/app/data/danmuku.db`，落在 `danmuku-data` 卷里
 
 ## 本地启动
 
@@ -87,6 +87,9 @@ docker compose up -d --build
 
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
 - `server` 不对外暴露 8080，SQLite 数据放在 `danmuku-data` 命名卷
+- ⚠️ **当前版本只支持单实例部署**：WebSocket 广播在进程内完成，多副本/多容器时
+  各实例的在线用户互相收不到弹幕（历史弹幕仍能通过 HTTP 拉到）。多实例需要引入
+  Redis Pub/Sub 之类的消息中间件，见「后续规划」
 - 更新：`git pull && git submodule update --init --recursive && docker compose up -d --build`
 - 自动备份：server 默认每天用 SQLite `VACUUM INTO` 生成一致性快照到 `data/backups/`，
   保留最近 7 份；可用 `BACKUP_DIR` / `BACKUP_INTERVAL` / `BACKUP_KEEP` 调整。
@@ -244,6 +247,10 @@ cd ../DanmuKuWeb-Web && git add -A && git commit -m "..." && git push
 cd .. && git add DanmuKuWeb-Server DanmuKuWeb-Web
 git commit -m "chore: update submodule pointers" && git push
 ```
+
+根仓库提交如果带上子模块指针，建议在正文里写明子模块的新 commit（例如
+`chore: bump server submodule to ad5732d`），这样主仓库历史能直接对上后端改动，
+审查者不需要额外跳转。
 
 也可以直接跑：
 
