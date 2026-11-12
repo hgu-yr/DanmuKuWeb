@@ -33,6 +33,7 @@
 
 - 驱动：`github.com/glebarez/sqlite`（基于 modernc 的纯 Go SQLite，`CGO_ENABLED=0` 可编译）
 - ORM：GORM 负责仓储层 CRUD 与批量 upsert；聚合统计和后台白名单查询继续使用参数化 SQL，不拼接用户输入
+- 原生 SQL 的边界：只保留迁移 DDL（`migrations/*.sql`）、GORM 初始化前的 `schema_migrations`、`VACUUM INTO` 备份，以及 SQLite 补列这类 GORM 不便表达的操作；业务读写全部走 GORM
 - 连接：GORM 与 `database/sql` 复用同一个连接池（`journal_mode=WAL`、`busy_timeout=5000`、单连接串行写入）
 - 表结构：只由 `internal/store/migrations/*.sql` 管理，**不使用 AutoMigrate**；加字段或索引请新增迁移文件
 - 时间列统一存 RFC3339Nano 文本（UTC），字符串比较即时间比较，与历史数据格式一致
