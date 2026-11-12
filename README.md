@@ -135,8 +135,8 @@ docker compose up -d --build
 
 - `GET /health`：liveness，只证明进程能应答
 - `GET /readyz`：readiness，额外 ping SQLite，失败返回 503
-- `GET /metrics`：Prometheus 指标（HTTP 延迟、WS 连接/丢弃、弹幕事件、LLM 延迟/跳过）
-- 日志：JSON（slog），包含 `request_id`、`route`、`status`、`latency_ms`
+- `GET /metrics`：Prometheus 指标（HTTP 延迟、WS 连接/丢弃、弹幕事件、LLM 延迟/跳过、DB 查询耗时/慢查询/错误）
+- 日志：JSON（slog），包含 `request_id`、`route`、`status`、`latency_ms`；SQL 超过 200ms 会打 `db_slow_query`
 - `server` 端口不对公网发布，`/metrics` 只在容器网络内可访问
 
 ## CI 与代码质检
@@ -315,5 +315,5 @@ git push -u origin main
 - [x] 安全加固（安全头/CSP、WS Origin、请求体限制、登录双维度限流、日志脱敏、SQLite 0600）
 - [x] 后台数据查看（表选择、分页、关键字段筛选，敏感表/列脱敏）
 - [x] 主站与管理后台拆分为独立入口（`/` 与 `/manage/yr/`）
-- [ ] 发送弹幕与点赞的频率限制
-- [ ] 部署（Docker + Nginx 反代 `/api`、`/ws`）
+- [ ] 点赞频率限制（发送/举报/登录等接口已限流，点赞还没有）
+- [x] 部署（Docker + Nginx 反代 `/api`、`/ws`）
