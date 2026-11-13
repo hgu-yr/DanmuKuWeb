@@ -65,7 +65,17 @@ stages:
               export GIT_CONFIG_VALUE_1="git@github.com:hgu-yr/DanmuKuWeb-Web.git"
               export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
               export GIT_TERMINAL_PROMPT=0
-              git submodule update --init --recursive
+              # 构建机到 Gitee 的网络偶尔超时，放宽低速判定并重试
+              git config --global http.lowSpeedLimit 1000
+              git config --global http.lowSpeedTime 60
+              ok=0
+              for i in 1 2 3; do
+                if git submodule update --init --recursive; then ok=1; break; fi
+                echo ">> 子模块拉取失败，重试 ($i/3)" >&2
+                rm -rf DanmuKuWeb-Server DanmuKuWeb-Web
+                sleep 10
+              done
+              [ "$ok" = "1" ] || exit 1
             fi
           - cd DanmuKuWeb-Server
           - export GOFLAGS=-mod=mod
@@ -112,7 +122,17 @@ stages:
               export GIT_CONFIG_VALUE_1="git@github.com:hgu-yr/DanmuKuWeb-Web.git"
               export GIT_ASKPASS="$PWD/scripts/git-askpass.sh"
               export GIT_TERMINAL_PROMPT=0
-              git submodule update --init --recursive
+              # 构建机到 Gitee 的网络偶尔超时，放宽低速判定并重试
+              git config --global http.lowSpeedLimit 1000
+              git config --global http.lowSpeedTime 60
+              ok=0
+              for i in 1 2 3; do
+                if git submodule update --init --recursive; then ok=1; break; fi
+                echo ">> 子模块拉取失败，重试 ($i/3)" >&2
+                rm -rf DanmuKuWeb-Server DanmuKuWeb-Web
+                sleep 10
+              done
+              [ "$ok" = "1" ] || exit 1
             fi
           - cd DanmuKuWeb-Web
           - npm ci --no-audit --no-fund
