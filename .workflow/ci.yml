@@ -49,7 +49,15 @@ stages:
         command:
           - set -eu
           - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
-          - apk add --no-cache git openssh-client
+          - |
+            ok=0
+            for i in 1 2 3; do
+              if timeout 180 apk add --no-cache git openssh-client; then ok=1; break; fi
+              echo ">> apk add 失败，重试 ($i/3)" >&2
+              apk update --no-cache || true
+              sleep 5
+            done
+            [ "$ok" = "1" ] || exit 1
           - |
             if [ ! -f DanmuKuWeb-Server/go.mod ]; then
               echo ">> 子模块未检出，开始初始化"
@@ -106,7 +114,15 @@ stages:
         command:
           - set -eu
           - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
-          - apk add --no-cache git openssh-client
+          - |
+            ok=0
+            for i in 1 2 3; do
+              if timeout 180 apk add --no-cache git openssh-client; then ok=1; break; fi
+              echo ">> apk add 失败，重试 ($i/3)" >&2
+              apk update --no-cache || true
+              sleep 5
+            done
+            [ "$ok" = "1" ] || exit 1
           - |
             if [ ! -f DanmuKuWeb-Web/package.json ]; then
               echo ">> 子模块未检出，开始初始化"
