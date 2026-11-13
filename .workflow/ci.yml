@@ -70,8 +70,15 @@ stages:
           - cd DanmuKuWeb-Server
           - export GOFLAGS=-mod=mod
           - export CGO_ENABLED=0
-          - export GOPROXY=https://goproxy.cn,direct
-          - go mod download
+          - export GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+          - |
+            ok=0
+            for i in 1 2 3; do
+              if timeout 180 go mod download; then ok=1; break; fi
+              echo ">> go mod download 失败，重试 ($i/3)" >&2
+              sleep 5
+            done
+            [ "$ok" = "1" ] || exit 1
           - go build ./...
           - go vet ./...
           - go test -v -coverprofile=cover.out ./...
