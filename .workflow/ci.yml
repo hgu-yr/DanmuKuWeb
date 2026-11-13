@@ -48,7 +48,7 @@ stages:
         image: docker.m.daocloud.io/library/golang:1.26-alpine
         command:
           - set -eu
-          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories
           - |
             ok=0
             for i in 1 2 3; do
@@ -113,7 +113,7 @@ stages:
         image: docker.m.daocloud.io/library/node:22-alpine
         command:
           - set -eu
-          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories
           - |
             ok=0
             for i in 1 2 3; do
@@ -171,7 +171,7 @@ stages:
         image: docker.m.daocloud.io/library/alpine:3.24
         command:
           - set -eu
-          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.tuna.tsinghua.edu.cn#g' /etc/apk/repositories
+          - sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories
           - apk add --no-cache bash git curl jq
           - bash scripts/ai-review.sh
 
