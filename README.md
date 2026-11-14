@@ -46,6 +46,8 @@
   - `danmaku:timeline`：ZSet，score 为过期时间（毫秒），用于取最近 N 条和清理过期成员
 - TTL：普通弹幕与私密回复都默认 **24 小时**（`DANMAKU_TTL` / `DANMAKU_REPLY_TTL` 可调）
 - 写穿失败只记日志，内存热数据仍可广播，不阻塞发弹幕；Redis 不可用时服务降级为纯内存
+- Redis 短暂不可用期间产生的弹幕不会补写：连接恢复后（go-redis 自动重连）新的写穿继续正常，恢复前的弹幕重启后会丢失
+- 写穿失败会计入 `danmuku_danmaku_persist_errors_total{op=...}`，便于告警
 - 已知限制：点赞者去重集合不落库，重启后同一用户可再次点赞；点赞数由 Redis `HINCRBY` 原子保留
 - 旧版 SQLite `danmaku` 表仍保留（历史数据不自动迁移），但新弹幕只写 Redis
 - 以上变量在 `DanmuKuWeb-Server/.env.example` 中配置；Docker 部署时 Redis 使用 `redis-data` 卷，SQLite 仍在 `danmuku-data` 卷
@@ -111,7 +113,14 @@ docker compose up -d --build
 
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
 - `server` 不对外暴露 8080；SQLite（规则/账号）在 `danmuku-data` 卷，弹幕在 `redis` 容器的 `redis-data` 卷
-- `redis` 使用 AOF 持久化，容器重启后 24 小时内的弹幕仍可回放
+- `redis` 使用 AOF 持久化，容器/进程重启后 24 小时内的弹幕仍可回放；可用
+  `REDIS_PASSWORD` 启用密码（compose 会同时配置 redis 与 server）
+- AOF 只防进程/容器重启，不防磁盘或卷损坏。弹幕本身是 24h 短生命周期数据，
+  默认接受此风险；如需兜底，可定期备份卷：
+  ```bash
+  docker run --rm -v danmuku_redis-data:/data -v "$PWD":/backup alpine \
+    tar czf /backup/redis-data.tar.gz -C /data .
+  ```
 - ⚠️ **当前版本只支持单实例部署**：WebSocket 广播在进程内完成，多副本/多容器时
   各实例的在线用户互相收不到弹幕（历史弹幕仍能通过 HTTP 拉到）。多实例需要引入
   Redis Pub/Sub 之类的消息中间件，见「后续规划」
@@ -144,7 +153,7 @@ docker compose up -d --build
 
 - `GET /health`：liveness，只证明进程能应答
 - `GET /readyz`：readiness，额外 ping SQLite，失败返回 503
-- `GET /metrics`：Prometheus 指标（HTTP 延迟、WS 连接/丢弃、弹幕事件、LLM 延迟/跳过、DB 查询耗时/慢查询/错误）
+- `GET /metrics`：Prometheus 指标（HTTP 延迟、WS 连接/丢弃、弹幕事件、LLM 延迟/跳过、DB 查询耗时/慢查询/错误、弹幕 Redis 写穿失败）
 - 日志：JSON（slog），包含 `request_id`、`route`、`status`、`latency_ms`；SQL 超过 200ms 会打 `db_slow_query`
 - `server` 端口不对公网发布，`/metrics` 只在容器网络内可访问
 
