@@ -1,8 +1,12 @@
-.PHONY: run server web build test tidy clean env env-check
+.PHONY: run server web redis build test tidy clean env env-check
 
 # 启动后端（默认 :8080）
 server:
 	cd DanmuKuWeb-Server && go run ./cmd/server
+
+# 启动本地 Redis（弹幕存储；需要 Docker）
+redis:
+	docker compose up -d redis
 
 # 启动前端（默认 :5173）
 web:

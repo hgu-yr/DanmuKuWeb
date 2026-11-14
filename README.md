@@ -25,26 +25,30 @@
         └──────────────── 广播给所有在线客户端 ◀────────────────────────────┘
 ```
 
-- 发送弹幕：前端 `POST /api/v1/danmaku` → 后端写内存并写穿 SQLite → 通过 WebSocket 广播给所有在线客户端
+- 发送弹幕：前端 `POST /api/v1/danmaku` → 后端写内存并写穿 Redis → 通过 WebSocket 广播给所有在线客户端
 - 进入页面：前端 `GET /api/v1/danmaku` 拉取最近历史弹幕做回放，然后连接 `/ws` 接收实时弹幕
-- 重启恢复：启动时从 `danmaku` 表加载未过期弹幕，重启后仍能回放（详见下方「弹幕持久化」的已知限制）
+- 重启恢复：启动时从 Redis 加载未过期弹幕，重启后仍能回放（详见下方「弹幕持久化」的已知限制）
 
 ### 数据访问
 
-- 驱动：`github.com/glebarez/sqlite`（基于 modernc 的纯 Go SQLite，`CGO_ENABLED=0` 可编译）
-- ORM：GORM 负责仓储层 CRUD 与批量 upsert；聚合统计和后台白名单查询继续使用参数化 SQL，不拼接用户输入
+- 弹幕：Redis（`github.com/redis/go-redis/v9`），每条弹幕一个 Hash + 一个按过期时间排序的 ZSet，TTL 24h
+- 其它数据：SQLite + GORM（`github.com/glebarez/sqlite`，纯 Go，`CGO_ENABLED=0` 可编译）
 - 原生 SQL 的边界：只保留迁移 DDL（`migrations/*.sql`）、GORM 初始化前的 `schema_migrations`、`VACUUM INTO` 备份，以及 SQLite 补列这类 GORM 不便表达的操作；业务读写全部走 GORM
 - 连接：GORM 与 `database/sql` 复用同一个连接池（`journal_mode=WAL`、`busy_timeout=5000`、单连接串行写入）
 - 表结构：只由 `internal/store/migrations/*.sql` 管理，**不使用 AutoMigrate**；加字段或索引请新增迁移文件
 - 时间列统一存 RFC3339Nano 文本（UTC），字符串比较即时间比较，与历史数据格式一致
 
-### 弹幕持久化
+### 弹幕持久化（Redis）
 
-- SQLite 默认 `data/danmuku.db`（`DB_PATH`）；Docker 部署需挂载 `danmuku-data` 卷
-- 写穿失败只记日志，内存热数据仍可广播，不阻塞发弹幕
-- 普通弹幕 TTL `DANMAKU_TTL`（默认 2h），私密回复 `DANMAKU_REPLY_TTL`（默认 7d）
-- 已知限制：点赞者去重集合不落库，重启后同一用户可再次点赞；点赞数会保留
-- 以上变量在 `DanmuKuWeb-Server/.env.example` 中配置；Docker 部署时 `DB_PATH` 由 compose 固定为 `/app/data/danmuku.db`，落在 `danmuku-data` 卷里
+- 连接：`REDIS_ADDR`（默认 `127.0.0.1:6379`）、`REDIS_PASSWORD`、`REDIS_DB`、`REDIS_KEY_PREFIX`（默认 `danmaku`）
+- 数据结构：
+  - `danmaku:item:{id}`：Hash，保存内容、字号、作者、点赞数、私密标记、回复快照和时间，TTL 到 `expires_at`
+  - `danmaku:timeline`：ZSet，score 为过期时间（毫秒），用于取最近 N 条和清理过期成员
+- TTL：普通弹幕与私密回复都默认 **24 小时**（`DANMAKU_TTL` / `DANMAKU_REPLY_TTL` 可调）
+- 写穿失败只记日志，内存热数据仍可广播，不阻塞发弹幕；Redis 不可用时服务降级为纯内存
+- 已知限制：点赞者去重集合不落库，重启后同一用户可再次点赞；点赞数由 Redis `HINCRBY` 原子保留
+- 旧版 SQLite `danmaku` 表仍保留（历史数据不自动迁移），但新弹幕只写 Redis
+- 以上变量在 `DanmuKuWeb-Server/.env.example` 中配置；Docker 部署时 Redis 使用 `redis-data` 卷，SQLite 仍在 `danmuku-data` 卷
 
 ## 本地启动
 
@@ -59,6 +63,7 @@ make run      # 前后端一起启动，Ctrl-C 一并退出
 ```bash
 make server   # 仅后端（默认 :8080）
 make web      # 仅前端（默认 :5173）
+make redis    # 启动本地 Redis（弹幕存储，需要 Docker）
 make test     # 后端测试
 make build    # 生产构建：后端 -> DanmuKuWeb-Server/bin，前端 -> DanmuKuWeb-Web/dist
 make env       # 从 internal/config/spec.go 重新生成后端 .env.example
@@ -67,6 +72,8 @@ make env-check # 校验模板与 spec 一致（CI 也会跑）
 
 后端的配置项只在 `DanmuKuWeb-Server/internal/config/spec.go` 声明一次：
 默认值与注释写在那里，`.env.example` 由 `make env` 生成，不要手工编辑。
+弹幕默认写入 `127.0.0.1:6379` 的 Redis；本地没启动 Redis 时服务仍能运行，
+但弹幕只保存在内存里，重启即丢失（可先执行 `make redis`）。
 
 想手动分两个终端跑：
 
@@ -103,13 +110,15 @@ docker compose up -d --build
 后端的完整变量表见 `DanmuKuWeb-Server/.env.example`（由 spec.go 生成）。
 
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
-- `server` 不对外暴露 8080，SQLite 数据放在 `danmuku-data` 命名卷
+- `server` 不对外暴露 8080；SQLite（规则/账号）在 `danmuku-data` 卷，弹幕在 `redis` 容器的 `redis-data` 卷
+- `redis` 使用 AOF 持久化，容器重启后 24 小时内的弹幕仍可回放
 - ⚠️ **当前版本只支持单实例部署**：WebSocket 广播在进程内完成，多副本/多容器时
   各实例的在线用户互相收不到弹幕（历史弹幕仍能通过 HTTP 拉到）。多实例需要引入
   Redis Pub/Sub 之类的消息中间件，见「后续规划」
 - 更新：`git pull && git submodule update --init --recursive && docker compose up -d --build`
 - 自动备份：server 默认每天用 SQLite `VACUUM INTO` 生成一致性快照到 `data/backups/`，
   保留最近 7 份；可用 `BACKUP_DIR` / `BACKUP_INTERVAL` / `BACKUP_KEEP` 调整。
+  该备份只覆盖 SQLite；弹幕由 Redis AOF 负责，过期后自然消失。
 - Docker 恢复：先 `docker compose stop server`，快照在 `danmuku-data` 数据卷的
   `/app/data/backups/` 内，按下面方式在卷内操作，避免恢复到宿主机错误路径：
   ```bash
@@ -297,7 +306,7 @@ git push -u origin main
 
 ## 后续规划
 
-- [x] 弹幕持久化（SQLite 写穿 + 启动回放）
+- [x] 弹幕持久化（Redis 写穿 + 24h TTL + 启动回放）
 - [ ] 弹幕广播多实例化（Redis Pub/Sub / NATS）；当前 WebSocket 广播仅在单实例内生效
 - [ ] 房间 / 频道、弹幕防遮挡轨道
 - [x] 敏感词过滤（可配置规则 + 管理接口）

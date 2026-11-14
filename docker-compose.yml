@@ -22,6 +22,11 @@ services:
       CLIENT_TOKEN_SECRET: ${CLIENT_TOKEN_SECRET:-}
       WS_MAX_CLIENTS: ${WS_MAX_CLIENTS:-5000}
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-65536}
+      # 弹幕与点赞数存 Redis（TTL 默认 24h）
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: "0"
+      REDIS_KEY_PREFIX: danmaku
     volumes:
       - danmuku-data:/app/data
       # 需要地区统计时，把 ip2region.xdb 放到 ./data 并取消下面这行
@@ -30,6 +35,24 @@ services:
       - "8080"
     networks:
       - danmuku
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # 弹幕是短生命周期数据，用 AOF 保证容器重启后 24h 内的弹幕不丢
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - danmuku
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   web:
@@ -47,6 +70,7 @@ services:
 
 volumes:
   danmuku-data:
+  redis-data:
 
 networks:
   danmuku:
