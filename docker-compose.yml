@@ -49,8 +49,16 @@ services:
       - -c
       - |
         if [ -n "$$REDIS_PASSWORD" ]; then
+          case "$$REDIS_PASSWORD" in
+            *[!A-Za-z0-9._~!@%^+=-]*)
+              echo "[error] REDIS_PASSWORD contains unsupported characters (use A-Za-z0-9._~!@%^+=-)" >&2
+              exit 1
+              ;;
+          esac
+          rm -f /tmp/redis-auth.conf
           umask 077
-          printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf
+          printf 'requirepass "%s"\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf
+          chmod 600 /tmp/redis-auth.conf
           exec redis-server --appendonly yes --include /tmp/redis-auth.conf
         fi
         echo "[warn] REDIS_PASSWORD is empty, starting Redis without authentication" >&2

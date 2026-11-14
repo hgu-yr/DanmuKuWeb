@@ -114,7 +114,8 @@ docker compose up -d --build
 - `web` 容器监听 `WEB_PORT`（默认 80），托管前端并把 `/api`、`/ws` 反代到 `server`
 - `server` 不对外暴露 8080；SQLite（规则/账号）在 `danmuku-data` 卷，弹幕在 `redis` 容器的 `redis-data` 卷
 - `redis` 使用 AOF 持久化，容器/进程重启后 24 小时内的弹幕仍可回放；可用
-  `REDIS_PASSWORD` 启用密码（compose 会同时配置 redis 与 server）
+  `REDIS_PASSWORD` 启用密码（compose 会同时配置 redis 与 server，仅支持
+  字母、数字与 `. _ ~ ! @ % ^ + = -`）
 - AOF 只防进程/容器重启，不防磁盘或卷损坏。弹幕本身是 24h 短生命周期数据，
   默认接受此风险；如需兜底，可定期备份卷：
   ```bash
