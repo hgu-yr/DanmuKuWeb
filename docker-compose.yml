@@ -43,14 +43,17 @@ services:
   redis:
     image: redis:7-alpine
     # 弹幕是短生命周期数据，用 AOF 保证容器重启后 24h 内的弹幕不丢；
-    # 设置 REDIS_PASSWORD 时才追加 --requirepass，留空则保持无认证
+    # 设置 REDIS_PASSWORD 时写入临时配置文件（避免密码出现在进程参数里）
     command:
       - sh
       - -c
       - |
         if [ -n "$$REDIS_PASSWORD" ]; then
-          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+          umask 077
+          printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /tmp/redis-auth.conf
+          exec redis-server --appendonly yes --include /tmp/redis-auth.conf
         fi
+        echo "[warn] REDIS_PASSWORD is empty, starting Redis without authentication" >&2
         exec redis-server --appendonly yes
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
