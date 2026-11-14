@@ -42,8 +42,16 @@ services:
 
   redis:
     image: redis:7-alpine
-    # 弹幕是短生命周期数据，用 AOF 保证容器重启后 24h 内的弹幕不丢
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    # 弹幕是短生命周期数据，用 AOF 保证容器重启后 24h 内的弹幕不丢；
+    # 设置 REDIS_PASSWORD 时才追加 --requirepass，留空则保持无认证
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        fi
+        exec redis-server --appendonly yes
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
@@ -51,7 +59,7 @@ services:
     networks:
       - danmuku
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi | grep -q PONG"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping; else redis-cli ping; fi | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 5
